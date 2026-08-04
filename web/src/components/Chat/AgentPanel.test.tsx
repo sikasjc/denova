@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchSettings, updateUserSettings } from '@/features/settings/api'
 import { usePersistedUserSettings } from '@/hooks/usePersistedUserSettings'
 import { AgentPanel, WRITING_COMPOSER_SETTING_DEFAULTS, type WritingComposerSettingsController } from './AgentPanel'
+import { toast } from 'sonner'
+import { APIError } from '@/lib/api-client'
 
 const useWritingSkillOptionsMock = vi.hoisted(() => vi.fn())
 const useWorkspaceChangeGroupsMock = vi.hoisted(() => vi.fn())
@@ -32,8 +34,15 @@ vi.mock('@/features/changes/use-change-review', () => ({
   useWorkspaceChangeGroups: useWorkspaceChangeGroupsMock,
 }))
 
+vi.mock('sonner', () => ({
+  toast: {
+    error: vi.fn(),
+  },
+}))
+
 describe('AgentPanel', () => {
   beforeEach(() => {
+    vi.mocked(toast.error).mockReset()
     vi.mocked(fetchSettings).mockClear()
     vi.mocked(updateUserSettings).mockClear()
     vi.mocked(updateUserSettings).mockImplementation(async (settings) => ({
@@ -333,6 +342,41 @@ describe('AgentPanel', () => {
     await user.click(screen.getByRole('button', { name: '发送' }))
     await waitFor(() => expect(handleSubmitted).toHaveBeenCalledTimes(2))
     expect(handleSubmissionFailed).toHaveBeenCalledTimes(1)
+  })
+
+  it('只有正文审阅意见且原文定位过期时恢复意见并显示明确提示', async () => {
+    const user = userEvent.setup()
+    const error = new APIError('invalid review feedback', {
+      status: 400,
+      code: 'review_feedback_outdated',
+      details: { comment_id: 'comment-1', path: 'chapters/ch01.md' },
+    })
+    const handleSend = vi.fn().mockImplementation(async (message, options) => {
+      expect(message).toBe('请处理这 1 条审阅意见。')
+      options?.onSubmissionStart?.()
+      options?.onSubmissionError?.(error)
+      return false
+    })
+    const handleSubmitted = vi.fn()
+    const handleSubmissionFailed = vi.fn()
+    renderAgentPanel({
+      onSend: handleSend,
+      onReviewFeedbackSubmitted: handleSubmitted,
+      onReviewFeedbackSubmissionFailed: handleSubmissionFailed,
+      reviewFeedback: [{
+        source: 'document',
+        reviewThreadId: 'document-thread',
+        comments: [{ id: 'comment-1', body: '这里要更克制', path: 'chapters/ch01.md' }],
+      }],
+    })
+
+    await user.click(screen.getByRole('button', { name: '发送' }))
+
+    await waitFor(() => expect(handleSubmissionFailed).toHaveBeenCalledTimes(1))
+    expect(handleSubmitted).toHaveBeenCalledTimes(1)
+    expect(toast.error).toHaveBeenCalledWith('审阅意见发送失败', {
+      description: '正文已发生变化，这条评论已无法唯一定位原文。请打开对应文件，更新或删除这条评论后重试。',
+    })
   })
 
   it('同时提交正文与 Diff 审阅意见并保留各自来源', async () => {

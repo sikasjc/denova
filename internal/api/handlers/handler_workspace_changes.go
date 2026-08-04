@@ -306,7 +306,7 @@ func writeWorkspaceChangeError(c *app.RequestContext, err error) {
 		case workspacechange.ErrorCodeRevisionConflict, workspacechange.ErrorCodeConflict, workspacechange.ErrorCodeNoRedo,
 			workspacechange.ErrorCodeDurabilityPending:
 			status = consts.StatusConflict
-		case workspacechange.ErrorCodeInvalidEdit:
+		case workspacechange.ErrorCodeInvalidEdit, workspacechange.ErrorCodeReviewFeedbackOutdated:
 			status = consts.StatusBadRequest
 		}
 	}

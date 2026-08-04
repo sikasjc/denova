@@ -1,6 +1,6 @@
 import type { ChatTransport, UIMessage } from 'ai'
 import { DefaultChatTransport } from 'ai'
-import { fetchAPI } from './api-client/client'
+import { APIError, fetchAPI } from './api-client/client'
 import type { ChatMessage, UserMessageReference } from './api-client/types'
 
 export interface AgentMessageMetadata {
@@ -70,7 +70,7 @@ export class AgentChatTransport implements ChatTransport<AgentUIMessage> {
   constructor() {
     this.transport = new DefaultChatTransport<AgentUIMessage>({
       api: '/api/chat',
-      fetch: fetchAPI,
+      fetch: fetchAgentChat,
       prepareSendMessagesRequest: ({ messages, body }) => ({
         body: {
           ...(body || {}),
@@ -90,6 +90,29 @@ export class AgentChatTransport implements ChatTransport<AgentUIMessage> {
   reconnectToStream(options: Parameters<ChatTransport<AgentUIMessage>['reconnectToStream']>[0]) {
     return this.transport.reconnectToStream(options)
   }
+}
+
+async function fetchAgentChat(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const response = await fetchAPI(input, init)
+  if (response.ok) return response
+  const text = await response.text()
+  let payload: Record<string, unknown> = {}
+  if (text) {
+    try {
+      const parsed = JSON.parse(text)
+      payload = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : { error: text }
+    } catch {
+      payload = { error: text }
+    }
+  }
+  const message = typeof payload.error === 'string' && payload.error ? payload.error : `HTTP ${response.status}`
+  const code = typeof payload.code === 'string' && payload.code ? payload.code : undefined
+  const details = payload.details && typeof payload.details === 'object' && !Array.isArray(payload.details)
+    ? payload.details as Record<string, unknown>
+    : undefined
+  throw new APIError(message, { status: response.status, code, details, payload })
 }
 
 export function buildAgentChatRequestBody(body: AgentChatRequestBody): AgentChatRequestBody {

@@ -25,6 +25,7 @@ import { AgentChangeSummaryCard } from '@/features/changes/agent/AgentChangeSumm
 import { MAX_REVIEW_FEEDBACK_COMMENT_COUNT, MAX_REVIEW_FEEDBACK_CONTEXT_BYTES, reviewFeedbackCommentCount, reviewFeedbackContextBytes, type ReviewFeedbackBatch, type ReviewFeedbackComment, type ReviewFeedbackSelection } from '@/features/changes/agent/ReviewFeedbackTray'
 import { toast } from 'sonner'
 import type { ChatSendOptions } from '@/hooks/useAgentChat'
+import { APIError } from '@/lib/api-client'
 
 type AgentPanelView = 'chat' | 'sessions' | 'traces'
 
@@ -295,10 +296,19 @@ export function AgentPanel({
       submissionStarted = true
       onReviewFeedbackSubmitted?.(feedbackSelection)
     }
-    const handleSubmissionError = () => {
-      if (!feedbackSelection.length || !submissionStarted || submissionRestored) return
+    const handleSubmissionError = (error: unknown) => {
+      if (!feedbackSelection.length || submissionRestored) return
       submissionRestored = true
-      onReviewFeedbackSubmissionFailed?.(feedbackSelection)
+      if (submissionStarted) onReviewFeedbackSubmissionFailed?.(feedbackSelection)
+      if (error instanceof APIError) {
+        console.warn('提交审阅反馈失败', { status: error.status, code: error.code, details: error.details, error })
+      } else {
+        console.warn('提交审阅反馈失败', { error })
+      }
+      const description = error instanceof APIError && error.code === 'review_feedback_outdated'
+        ? t('changes.feedback.outdated')
+        : t('changes.feedback.submitFailed')
+      toast.error(t('changes.feedback.submitFailedTitle'), { description })
     }
     const accepted = await onSend(effectiveMessage, {
       writingSkill,
@@ -312,7 +322,7 @@ export function AgentPanel({
       onSubmissionError: handleSubmissionError,
     })
     if (feedbackSelection.length && accepted && !submissionStarted) handleSubmissionStart()
-    if (!accepted) handleSubmissionError()
+    if (!accepted) handleSubmissionError(undefined)
     return accepted
   }
 

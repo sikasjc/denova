@@ -197,3 +197,11 @@ func invalidReviewFeedbackError(message string, details map[string]any) error {
 		Details: details,
 	}
 }
+
+func outdatedReviewFeedbackError(message string, details map[string]any) error {
+	return &workspacechange.Error{
+		Code:    workspacechange.ErrorCodeReviewFeedbackOutdated,
+		Message: fmt.Sprintf("invalid review feedback: %s", message),
+		Details: details,
+	}
+}

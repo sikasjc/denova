@@ -15,6 +15,7 @@ import {
   DEFAULT_SESSION_MESSAGE_PAGE_SIZE,
 } from '@/lib/api'
 import type { ContextAnalysis, IDEContext, SessionSummary, TextSelection } from '@/lib/api'
+import { APIError } from '@/lib/api-client'
 import type { UserMessageReference } from '@/lib/api-client/types'
 import { fetchSettings } from '@/features/settings/api'
 import { formatApprovedPlanExecutionMessage } from '@/lib/plan-mode'
@@ -51,7 +52,7 @@ export interface ChatSendOptions {
   }
   loreReferenceLabels?: Record<string, string>
   onSubmissionStart?: () => void
-  onSubmissionError?: () => void
+  onSubmissionError?: (error: unknown) => void
 }
 
 export function useAgentChat(options: ChatOptions = {}) {
@@ -379,9 +380,9 @@ export function useAgentChat(options: ChatOptions = {}) {
         setLoreReferences((current) => Array.from(new Set([...prepared.composerLoreReferences, ...current])))
         setStyleScenes((current) => Array.from(new Set([...prepared.composerStyleScenes, ...current])))
         setTextSelections((current) => [...prepared.composerTextSelections.filter((item) => !current.includes(item)), ...current])
-        sendOptions.onSubmissionError?.()
+        sendOptions.onSubmissionError?.(e)
       }
-      appendDataMessage(setUIMessages, 'data-agent-error', { content: t('chat.activity.requestFailed', { error: String(e) }) })
+      appendDataMessage(setUIMessages, 'data-agent-error', { content: t('chat.activity.requestFailed', { error: agentRequestErrorMessage(t, e) }) })
       return false
     }
   }, [activePlanMode, isStreaming, loadHistory, loadSessions, prepareAgentRequest, sendMessage, setActivePlanMode, setUIMessages, t])
@@ -701,4 +702,13 @@ function sameAgentPartRef(left: AgentPartRef, right: AgentPartRef) {
 
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === 'AbortError'
+}
+
+function agentRequestErrorMessage(t: ReturnType<typeof useTranslation>['t'], error: unknown) {
+  if (error instanceof APIError) {
+    if (error.code === 'review_feedback_outdated') return t('changes.feedback.outdated')
+    if (error.code) return t(`changes.error.${error.code}`, { defaultValue: error.message })
+    return error.message
+  }
+  return error instanceof Error ? error.message : String(error)
 }

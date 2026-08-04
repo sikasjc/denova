@@ -111,7 +111,7 @@ func (r documentReviewFeedbackResolver) Resolve(ctx context.Context, runtime ide
 		}
 		anchor, outdated := documentreview.ProjectAnchor(content, revision, comment.Anchor)
 		if outdated {
-			return invalidReviewFeedbackError("a document comment no longer identifies unique source text", map[string]any{
+			return outdatedReviewFeedbackError("a document comment no longer identifies unique source text", map[string]any{
 				"comment_id": comment.ID, "path": comment.Path,
 			})
 		}

@@ -223,6 +223,35 @@ describe('agent-ui', () => {
     }
   })
 
+  it('AgentChatTransport 保留聊天请求失败的结构化错误', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      error: 'invalid review feedback: a document comment no longer identifies unique source text',
+      code: 'review_feedback_outdated',
+      details: { comment_id: 'comment-1', path: 'chapters/a.md' },
+    }), { status: 400, headers: { 'Content-Type': 'application/json' } }))
+
+    try {
+      const transport = new AgentChatTransport()
+      await expect(transport.sendMessages({
+        trigger: 'submit-message',
+        chatId: 'chat-1',
+        messageId: undefined,
+        abortSignal: undefined,
+        messages: [
+          { id: 'user-1', role: 'user', parts: [{ type: 'text', text: '请处理审阅意见' }] },
+        ] as AgentUIMessage[],
+        body: {},
+      })).rejects.toMatchObject({
+        name: 'APIError',
+        status: 400,
+        code: 'review_feedback_outdated',
+        details: { comment_id: 'comment-1', path: 'chapters/a.md' },
+      })
+    } finally {
+      fetchSpy.mockRestore()
+    }
+  })
+
   it('恢复活跃流时按 part 稳定身份合并历史和 replay，避免卡片在底部重复', () => {
     const messages = normalizeAgentUIMessages([
       {

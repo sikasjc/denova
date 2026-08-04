@@ -22,10 +22,12 @@ func (h *Handlers) HandleChat(ctx context.Context, c *app.RequestContext) {
 	}
 	var req agent.ChatRequest
 	if err := c.BindJSON(&req); err != nil {
+		log.Printf("[agent-chat] request rejected phase=bind_json error=%v", err)
 		writeErrorKey(c, consts.StatusBadRequest, "api.common.invalidBody")
 		return
 	}
 	if strings.TrimSpace(req.Message) == "" {
+		log.Printf("[agent-chat] request rejected phase=validate_message review_batches=%d error=message_required", len(req.ReviewFeedback))
 		writeErrorKey(c, consts.StatusBadRequest, "api.common.messageRequired")
 		return
 	}
@@ -33,6 +35,7 @@ func (h *Handlers) HandleChat(ctx context.Context, c *app.RequestContext) {
 
 	task, err := h.app.StartTaskWithError(ctx, req)
 	if err != nil {
+		h.logChatPreparationError(req, err)
 		h.writeChatPreparationError(c, err)
 		return
 	}
@@ -57,6 +60,7 @@ func (h *Handlers) HandleChatContextAnalysis(ctx context.Context, c *app.Request
 	req.Locale = requestLocale(c)
 	analysis, err := h.app.AnalyzeContext(ctx, req)
 	if err != nil {
+		h.logChatPreparationError(req, err)
 		h.writeChatPreparationError(c, err)
 		return
 	}
@@ -78,6 +82,25 @@ func (h *Handlers) writeChatPreparationError(c *app.RequestContext, err error) {
 		return
 	}
 	writeError(c, consts.StatusInternalServerError, err.Error())
+}
+
+func (h *Handlers) logChatPreparationError(req agent.ChatRequest, err error) {
+	var changeErr *workspacechange.Error
+	if errors.As(err, &changeErr) {
+		log.Printf("[agent-chat] request rejected phase=prepare review_batches=%d review_comments=%d code=%s details=%v error=%v",
+			len(req.ReviewFeedback), reviewFeedbackCommentCount(req.ReviewFeedback), changeErr.Code, changeErr.Details, err)
+		return
+	}
+	log.Printf("[agent-chat] request rejected phase=prepare review_batches=%d review_comments=%d error=%v",
+		len(req.ReviewFeedback), reviewFeedbackCommentCount(req.ReviewFeedback), err)
+}
+
+func reviewFeedbackCommentCount(refs agent.ReviewFeedbackRefs) int {
+	total := 0
+	for _, ref := range refs {
+		total += len(ref.CommentIDs)
+	}
+	return total
 }
 
 func (h *Handlers) HandleChatContextCompaction(ctx context.Context, c *app.RequestContext) {

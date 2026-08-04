@@ -80,3 +80,58 @@ func TestDocumentReviewCommentLifecycleAPI(t *testing.T) {
 		t.Fatalf("forged anchor status=%d body=%s workspace=%s", forged.Code, forged.Body.String(), filepath.Base(workspace))
 	}
 }
+
+func TestChatReturnsCodedErrorForOutdatedDocumentReviewFeedback(t *testing.T) {
+	application := newTestApplication(t)
+	server := NewServer(application, "0")
+	workspace := application.Workspace()
+	path := "chapters/review-outdated.md"
+	content := "开头。\n\n目标段落\n"
+	if err := application.BookService().WriteFile(path, content); err != nil {
+		t.Fatal(err)
+	}
+	start := len("开头。\n\n")
+	quote := "目标段落"
+	created := performWorkspaceChangeRequest(t, server, http.MethodPost, "/api/workspace/document-comments", workspace, map[string]any{
+		"path": path,
+		"body": "请调整这段",
+		"anchor": map[string]any{
+			"kind": documentreview.AnchorKindTextBlock, "encoding": documentreview.AnchorEncodingUTF8,
+			"revision": workspacechange.Revision([]byte(content)), "start": start, "end": start + len(quote),
+			"quote": quote, "display_quote": quote, "editor_from": 4, "editor_to": 8,
+		},
+	})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", created.Code, created.Body.String())
+	}
+	var createBody struct {
+		ReviewThread documentreview.Thread  `json:"review_thread"`
+		Comment      documentreview.Comment `json:"comment"`
+	}
+	decodeResponse(t, created.Body.Bytes(), &createBody)
+	if err := application.BookService().WriteFile(path, "目标段落\n目标段落\n"); err != nil {
+		t.Fatal(err)
+	}
+
+	response := performJSONRequest(t, server, http.MethodPost, "/api/chat", map[string]any{
+		"message": "请处理这 1 条审阅意见。",
+		"review_feedback": []map[string]any{{
+			"source": "document", "review_thread_id": createBody.ReviewThread.ID,
+			"comment_ids": []string{createBody.Comment.ID},
+		}},
+	})
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Code    string         `json:"code"`
+		Details map[string]any `json:"details"`
+	}
+	decodeResponse(t, response.Body.Bytes(), &payload)
+	if payload.Code != workspacechange.ErrorCodeReviewFeedbackOutdated {
+		t.Fatalf("code=%q body=%s", payload.Code, response.Body.String())
+	}
+	if payload.Details["comment_id"] != createBody.Comment.ID || payload.Details["path"] != path {
+		t.Fatalf("details=%v", payload.Details)
+	}
+}

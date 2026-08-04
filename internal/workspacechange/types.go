@@ -6,12 +6,13 @@ import (
 )
 
 const (
-	ErrorCodeInvalidEdit       = "invalid_edit"
-	ErrorCodeRevisionConflict  = "revision_conflict"
-	ErrorCodeNotFound          = "not_found"
-	ErrorCodeConflict          = "conflict"
-	ErrorCodeNoRedo            = "no_redo"
-	ErrorCodeDurabilityPending = "durability_pending"
+	ErrorCodeInvalidEdit            = "invalid_edit"
+	ErrorCodeRevisionConflict       = "revision_conflict"
+	ErrorCodeNotFound               = "not_found"
+	ErrorCodeConflict               = "conflict"
+	ErrorCodeNoRedo                 = "no_redo"
+	ErrorCodeDurabilityPending      = "durability_pending"
+	ErrorCodeReviewFeedbackOutdated = "review_feedback_outdated"
 )
 
 const (

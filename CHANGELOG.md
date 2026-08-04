@@ -24,6 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- 修复仅携带正文审阅意见（输入框无文本时会自动生成提交文案）的模型请求在评论锚点过期后静默失败：`/api/chat` 现在返回稳定的 `review_feedback_outdated` 错误码与评论/文件详情，后端记录请求准备阶段的拒绝日志；前端会恢复并保留审阅意见，同时用中英文 toast 明确提示正文已变化、评论无法唯一定位原文。
+- Fixed silent failures when sending document-review feedback without typed text (the composer generates a default submission message) after a comment anchor becomes outdated: `/api/chat` now returns a stable `review_feedback_outdated` code with comment/file details, the backend logs preparation-stage rejections, and the frontend restores the review feedback while showing a localized toast explaining that the document changed and the original text is no longer uniquely identifiable.
 - 修复大模型长时间大量输出时聊天页面卡死：根因是流式正文每帧被整段重新解析 Markdown（O(n²)），现改为块级增量渲染，长文流式期间输入、滚动、按钮保持响应。
 - Fixed the chat page freezing during long, high-volume model output: the root cause was re-parsing the entire streaming body's Markdown on every frame (O(n²)). With block-level incremental rendering, input, scrolling, and buttons stay responsive while long content streams.
 - 修复刷新/重启后因回放巨型进行中消息导致的前端内存溢出（OOM）：会话流重连时的增量事件回放已合并压缩，配合常驻消息上限，重连不再一次性把海量增量重建进内存。
