@@ -17,25 +17,31 @@ import (
 
 var workspaceEditFileToolDescription = strings.TrimSpace(`Apply one or more exact text edits to a single workspace file as one reviewed change.
 - file_path must identify one file inside the current workspace.
+- Read the latest file first and copy every old_string verbatim from that result, including punctuation, quotes, spaces and line breaks. Do not reconstruct old_string from memory.
 - Every item in edits is matched against the same original file snapshot, not against the result of an earlier item.
 - Keep edits non-overlapping. Use replace_all only when every exact occurrence should change.
 - Put dependent changes to the same file in one call. Independent files may use separate edit_file calls in the same assistant response.
 - The tool captures and protects the current file snapshot internally when the call starts.
+- If matching fails or the revision changed, read the file again and rebuild a smaller uniquely identifiable edit. Do not fall back to a full-file replacement.
 
 将一个或多个精确文本修改作为一次可审阅变更应用到同一个 workspace 文件。
 - file_path 必须指向当前 workspace 内的单个文件。
+- 先读取目标文件的最新内容，并从读取结果逐字复制 old_string，完整保留中英文标点、引号、空格和换行；不要凭记忆重新生成 old_string。
 - edits 中的每一项都基于同一份原始文件快照匹配，不基于前一项修改后的结果。
 - 各修改区间不得重叠；只有确实需要替换全部精确匹配时才使用 replace_all。
 - 同一文件内相互依赖的修改必须放在一次调用中；不同文件的独立修改可以在同一轮分别调用 edit_file。
-- 工具会在调用开始时自行获取并保护当前文件快照。`)
+- 工具会在调用开始时自行获取并保护当前文件快照。
+- 如果匹配失败或 revision 已变化，重新读取文件并构造更小且唯一的 edit；不要降级为整文件覆盖。`)
 
 var workspaceWriteFileToolDescription = strings.TrimSpace(`Replace the complete content of one workspace file as a reviewed change.
 - Use edit_file for localized changes; use write_file only for a new file or an intentional full rewrite.
+- Multiple review comments or a failed exact edit do not by themselves authorize a full rewrite of an existing chapter.
 - file_path must identify one file inside the current workspace.
 - The tool detects whether the file exists and protects its current snapshot internally.
 
 将一个 workspace 文件的完整内容替换为新内容，并记录为可审阅变更。
 - 局部修改使用 edit_file；只有新建文件或明确需要整体重写时才使用 write_file。
+- 审阅意见很多或 edit_file 精确匹配失败，都不等于获得覆盖已有章节的授权。
 - file_path 必须指向当前 workspace 内的单个文件。
 - 工具会自行判断文件是否存在并保护当前快照。`)
 

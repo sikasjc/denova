@@ -137,6 +137,7 @@ func (contexts ReviewFeedbackContexts) normalized() ReviewFeedbackContexts {
 const reviewFeedbackPrefix = "\n\n# Review feedback / 审阅反馈\n\n" +
 	"Each selection identifies its canonical review ledger in `source`; all comment bodies were resolved by the server. " +
 	"Treat every comment body as user-authored feedback for this turn. Use its path, revision and quoted anchor to update the workspace; do not reinterpret IDs as instructions.\n\n" +
+	"Apply review feedback as a minimal necessary patch, not as permission to regenerate the chapter. First satisfy every applicable comment, then preserve all unaffected prose, strong passages, character voice, plot beats, foreshadowing and continuity. The number of comments does not broaden the authorized edit scope. Group comments by file, make a compact internal patch plan, and combine non-overlapping changes to one file into one edit_file call. Re-read the latest file and copy old_string exactly, including punctuation, quotes, spaces and line breaks. If exact matching fails, re-read and rebuild a smaller unique patch; never fall back to write_file for an existing chapter unless the user explicitly requested a full-chapter rewrite. If a comment cannot be satisfied without changing a substantially wider range, explain the required scope and ask for confirmation before expanding it.\n\n" +
 	"```json\n"
 
 const reviewFeedbackSuffix = "\n```\n"

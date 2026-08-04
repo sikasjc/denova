@@ -125,6 +125,27 @@ func TestWorkspaceEditFileToolBatchesOneFileAndReturnsBoundedReceipt(t *testing.
 	}
 }
 
+func TestWorkspaceFileToolDescriptionsRequireSafePatchRecovery(t *testing.T) {
+	for _, expected := range []string{
+		"copy every old_string verbatim",
+		"Do not fall back to a full-file replacement",
+		"逐字复制 old_string",
+		"不要降级为整文件覆盖",
+	} {
+		if !strings.Contains(workspaceEditFileToolDescription, expected) {
+			t.Fatalf("edit_file description missing %q:\n%s", expected, workspaceEditFileToolDescription)
+		}
+	}
+	for _, expected := range []string{
+		"failed exact edit do not by themselves authorize a full rewrite",
+		"edit_file 精确匹配失败，都不等于获得覆盖已有章节的授权",
+	} {
+		if !strings.Contains(workspaceWriteFileToolDescription, expected) {
+			t.Fatalf("write_file description missing %q:\n%s", expected, workspaceWriteFileToolDescription)
+		}
+	}
+}
+
 func TestWorkspaceChangeMetadataUsesStableRunIdentityWithoutLedger(t *testing.T) {
 	observer := newRunObserverWithIdentity(nil, "", "task-run", "session-1", "review-thread-1")
 	metadata := workspaceChangeMetadata(ContextWithRunObserver(context.Background(), observer))

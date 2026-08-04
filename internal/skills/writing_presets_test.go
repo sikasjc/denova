@@ -53,6 +53,31 @@ func TestBuiltinWritingPresetInstructionsCoverRequiredTools(t *testing.T) {
 	}
 }
 
+func TestBuiltinWritingPresetInstructionsUseMinimalPatchContract(t *testing.T) {
+	for _, name := range []string{"rewrite", "novel-lite", "novel-standard", "novel-heavy"} {
+		content := readBuiltinWritingPreset(t, name)
+		for _, required := range []string{
+			"最小必要",
+			"edit_file",
+			"old_string",
+			"整章重写",
+		} {
+			if !strings.Contains(content, required) {
+				t.Fatalf("%s missing minimal patch instruction %q", name, required)
+			}
+		}
+	}
+	rewrite := readBuiltinWritingPreset(t, "rewrite")
+	for _, forbidden := range []string{
+		"根据作者要求进行修改，完全重写",
+		"使用 write_file 写回修改后的章节",
+	} {
+		if strings.Contains(rewrite, forbidden) {
+			t.Fatalf("rewrite skill still defaults to full replacement: %q", forbidden)
+		}
+	}
+}
+
 func TestBuiltinWritingPresetInstructionsCoverTaskDelegation(t *testing.T) {
 	for _, name := range []string{"novel-standard", "novel-heavy"} {
 		content := readBuiltinWritingPreset(t, name)

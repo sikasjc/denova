@@ -28,6 +28,11 @@ func TestSystemInstructionRequiresIdeasAndCreatorDuringIdeation(t *testing.T) {
 		"ch{order:05}-{chapter}-{title}.md",
 		"v{order:05}-{volume}",
 		"不要自动重命名旧章节",
+		"最小必要改动集",
+		"审阅意见数量增加不代表允许扩大修改范围",
+		"只有用户明确要求“整章重写 / 全文重写 / 换视角重写 / 彻底改写”",
+		"old_string 应从读取结果中逐字复制",
+		"不得因为精确匹配失败就改用 write_file 覆盖已有章节",
 	} {
 		if !strings.Contains(instruction, required) {
 			t.Fatalf("系统提示缺少 %q:\n%s", required, instruction)

@@ -40,6 +40,10 @@ func TestComposeAgentInputInjectsOnlyResolvedReviewFeedbackWithSource(t *testing
 
 	composition := composeAgentInput(req, nil, nil, DefaultLoopPolicy())
 	for _, expected := range []string{
+		"minimal necessary patch",
+		"The number of comments does not broaden the authorized edit scope",
+		"copy old_string exactly",
+		"never fall back to write_file for an existing chapter",
 		`"source":"workspace_change"`,
 		`"review_thread_id":"thread-ledger"`,
 		`"comment_id":"comment-ledger"`,

@@ -24,16 +24,18 @@ agent: ide
 ## 工具使用要求
 
 - 写作前使用 `read_file` 读取必要上下文：`CREATOR.md`、`setting/outline.md`、`setting/progress.md`、`setting/character-states.md`、相关章节组细纲和最近章节；涉及资料库条目时先用 `list_lore_items` 判断，再用 `read_lore_items` 读取相关完整资料。
-- 主 Agent 生成初稿后，使用 `write_file` 写入 `chapters/` 下符合命名规则的章节文件；如果是在已有章节上做局部修订，使用 `edit_file`，并确保 `old_string` 来自最近一次 `read_file` 的实际内容且不包含行号前缀。
+- 主 Agent 生成新章节初稿后，使用 `write_file` 写入 `chapters/` 下符合命名规则的新章节文件；如果是在已有章节上做修订或处理审阅意见，默认使用 `edit_file`，并确保 `old_string` 来自最近一次 `read_file` 的实际内容且不包含行号前缀。
+- 修改已有章节前，先把用户要求与 reviewer/用户审阅意见聚合为内部 Patch Plan：逐项标记问题、证据位置、必须保留内容、最小必要修改范围和重叠关系。评论数量不会自动扩大授权范围。
+- 同一文件的多个不重叠修改点合并到一次 `edit_file`；`old_string` 必须从最新正文逐字复制，保留中英文标点、引号、空格和换行。匹配失败时重新读取并重建更小且唯一的 edit，不得改用 `write_file` 覆盖章节。
 - 审稿必须通过 `task` 工具委派给 `reviewer`。`task` 的 description 里要写清用户目标、章节路径、必要上下文来源、审稿重点、输出格式，以及 `reviewer` 只审稿不改文件。
-- 修订后如果需要覆盖整章，使用 `write_file`；如果只修少量段落，使用 `edit_file`。更新 `setting/progress.md` 和 `setting/character-states.md` 时同样按“局部修改用 `edit_file`、全量重写用 `write_file`”选择。
+- 修订时完整解决真正成立的问题，同时保留未涉及原文、强段落、有效情节节点、人物声线、伏笔和连续性。只有用户明确要求整章重写、全文重写、换视角重写、彻底改写或整体重构时，才可对已有章节使用 `write_file`；局部修改无法满足时先请求确认。更新 `setting/progress.md` 和 `setting/character-states.md` 时同样优先使用 `edit_file`。
 - 每次调用 `write_file` 或 `edit_file` 后都要检查工具结果。若结果包含 `[tool error]`、参数 JSON 错误、`string not found`、路径错误或截断提示，不得宣称已完成；应重新读取目标文件、修正参数后重试，或明确告诉用户未写入成功。
 - 最终输出前，使用 `read_file` 读回新增或修订后的章节关键片段；如更新了状态文件，也读回对应关键片段，确认内容已经落盘。
 
 1. 主 Agent 按用户要求的范围和约束生成初稿，通过 `write_file` 工具写入 `chapters/` 下的章节文件，暂不更新进度和角色状态相关文件。
 2. 主 Agent 使用 `task` 工具启动审稿子 Agent（`reviewer`）审稿，并把新增章节路径、用户要求、必要上下文和需要重点检查的规则交给 `reviewer`。
 3. `reviewer` 只审稿并返回结构化问题，不直接改正文；需要严格检查连续性、资料库匹配、节奏、文风、人物动机、剧情逻辑，以及每条创作规则是否遵守；不要输出赞扬。
-4. 主 Agent 接收审稿结论后直接修订章节，只修真正需要修的问题，保留原故事内容、强段落、有效情节节点、人物声线和连续性。
+4. 主 Agent 接收审稿结论后先聚合问题并形成最小必要 Patch Plan，再定向修订章节；不能为了逐条机械响应而损害整体质量，也不能借评论数量多而重写未涉及内容。
 5. 主 Agent 完成本轮最终修订稿后，立即在同一轮更新 `setting/progress.md` 和 `setting/character-states.md`，不等待作者另行确认成章；章节状态只用于 UI 编辑标记。只有长期稳定设定发生明确变化时，才提出资料库更新建议或按用户要求更新资料库。
 
 ## 审稿要求
