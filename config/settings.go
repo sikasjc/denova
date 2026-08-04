@@ -74,18 +74,19 @@ type Settings struct {
 	UpdateCheckEnabled *bool  `toml:"update_check_enabled,omitempty" json:"update_check_enabled,omitempty"`
 
 	// Agent
-	MaxIteration            *int   `toml:"max_iteration,omitempty" json:"max_iteration,omitempty"`
-	ModelMaxRetries         *int   `toml:"model_max_retries,omitempty" json:"model_max_retries,omitempty"`
-	AgentIdleTimeoutSeconds *int   `toml:"agent_idle_timeout_seconds,omitempty" json:"agent_idle_timeout_seconds,omitempty"`
-	AgentToolResultLimitKB  *int   `toml:"agent_tool_result_limit_kb,omitempty" json:"agent_tool_result_limit_kb,omitempty"`
-	LLMInputLogEnabled      *bool  `toml:"llm_input_log_enabled,omitempty" json:"llm_input_log_enabled,omitempty"`
-	TraceCaptureLevel       string `toml:"trace_capture_level,omitempty" json:"trace_capture_level,omitempty"`
-	TraceExporter           string `toml:"trace_exporter,omitempty" json:"trace_exporter,omitempty"`
-	TraceRetentionRuns      *int   `toml:"trace_retention_runs,omitempty" json:"trace_retention_runs,omitempty"`
-	PlanModeDefault         *bool  `toml:"plan_mode_default,omitempty" json:"plan_mode_default,omitempty"`
-	IDEStoryTellerID        string `toml:"ide_story_teller_id,omitempty" json:"ide_story_teller_id,omitempty"`
-	IDEImagePresetID        string `toml:"ide_image_preset_id,omitempty" json:"ide_image_preset_id,omitempty"`
-	WritingSkillDefault     string `toml:"writing_skill_default,omitempty" json:"writing_skill_default,omitempty"`
+	MaxIteration             *int   `toml:"max_iteration,omitempty" json:"max_iteration,omitempty"`
+	ModelMaxRetries          *int   `toml:"model_max_retries,omitempty" json:"model_max_retries,omitempty"`
+	AgentIdleTimeoutSeconds  *int   `toml:"agent_idle_timeout_seconds,omitempty" json:"agent_idle_timeout_seconds,omitempty"`
+	AgentToolResultLimitKB   *int   `toml:"agent_tool_result_limit_kb,omitempty" json:"agent_tool_result_limit_kb,omitempty"`
+	LLMInputLogEnabled       *bool  `toml:"llm_input_log_enabled,omitempty" json:"llm_input_log_enabled,omitempty"`
+	TraceCaptureLevel        string `toml:"trace_capture_level,omitempty" json:"trace_capture_level,omitempty"`
+	TraceExporter            string `toml:"trace_exporter,omitempty" json:"trace_exporter,omitempty"`
+	TraceRetentionRuns       *int   `toml:"trace_retention_runs,omitempty" json:"trace_retention_runs,omitempty"`
+	PlanModeDefault          *bool  `toml:"plan_mode_default,omitempty" json:"plan_mode_default,omitempty"`
+	ChatResidentMessageLimit *int   `toml:"chat_resident_message_limit,omitempty" json:"chat_resident_message_limit,omitempty"`
+	IDEStoryTellerID         string `toml:"ide_story_teller_id,omitempty" json:"ide_story_teller_id,omitempty"`
+	IDEImagePresetID         string `toml:"ide_image_preset_id,omitempty" json:"ide_image_preset_id,omitempty"`
+	WritingSkillDefault      string `toml:"writing_skill_default,omitempty" json:"writing_skill_default,omitempty"`
 
 	// 游戏模式
 	InteractiveStageFontSize   *int     `toml:"interactive_stage_font_size,omitempty" json:"interactive_stage_font_size,omitempty"`
@@ -104,6 +105,10 @@ const (
 	DefaultTraceCaptureLevel       = "summary"
 	DefaultTraceExporter           = "local"
 	DefaultTraceRetentionRuns      = 100
+	// DefaultChatResidentMessageLimit 是聊天/游戏视图在 React state 中保留的常驻消息条数上限，
+	// 用于超长多轮会话的前端内存控制；超出时最早的消息移出 state（仍可通过"加载更早"从后端翻页拉回）。
+	// 0 表示不限制。
+	DefaultChatResidentMessageLimit = 400
 )
 
 // DefaultSettings 返回内置默认配置（最低优先级）。
@@ -159,6 +164,7 @@ func DefaultSettings() Settings {
 		GeneralSubAgents:           DefaultAgentGeneralSubAgentSettings(),
 		SubAgents:                  nil,
 		PlanModeDefault:            boolPtr(false),
+		ChatResidentMessageLimit:   intPtr(DefaultChatResidentMessageLimit),
 		IDEStoryTellerID:           "classic",
 		IDEImagePresetID:           "game-cg",
 		WritingSkillDefault:        DefaultWritingSkillName,
@@ -311,6 +317,9 @@ func Merge(parent, child Settings) Settings {
 	}
 	if child.PlanModeDefault != nil {
 		out.PlanModeDefault = child.PlanModeDefault
+	}
+	if child.ChatResidentMessageLimit != nil {
+		out.ChatResidentMessageLimit = child.ChatResidentMessageLimit
 	}
 	if child.IDEStoryTellerID != "" {
 		out.IDEStoryTellerID = child.IDEStoryTellerID
@@ -621,6 +630,7 @@ func sanitizeEditableSettings(s Settings) Settings {
 	s.DefaultImageAPIProfileID = strings.TrimSpace(s.DefaultImageAPIProfileID)
 	s.AgentIdleTimeoutSeconds = normalizeAgentIdleTimeoutSeconds(s.AgentIdleTimeoutSeconds)
 	s.AgentToolResultLimitKB = normalizeAgentToolResultLimitKB(s.AgentToolResultLimitKB)
+	s.ChatResidentMessageLimit = normalizeChatResidentMessageLimit(s.ChatResidentMessageLimit)
 	s.ModelProfiles = sanitizeModelProfiles(s.ModelProfiles)
 	s.ImageAPIProfiles = sanitizeImageAPIProfiles(s.ImageAPIProfiles)
 	if defaultProfile, ok := defaultModelProfile(s.ModelProfiles); ok {
@@ -662,6 +672,26 @@ func normalizeAgentToolResultLimitKB(limit *int) *int {
 	}
 	if *limit == 0 {
 		return intPtr(DefaultAgentToolResultLimitKB)
+	}
+	return limit
+}
+
+// normalizeChatResidentMessageLimit 归一化前端常驻消息上限。
+// nil / 负值视为未设置（继承上层）；0 表示不限制（合法）；正值设一个下限，
+// 避免过小窗口把正在进行的一轮对话裁掉。
+func normalizeChatResidentMessageLimit(limit *int) *int {
+	if limit == nil {
+		return nil
+	}
+	if *limit < 0 {
+		return nil
+	}
+	if *limit == 0 {
+		return limit
+	}
+	const minResidentMessages = 20
+	if *limit < minResidentMessages {
+		return intPtr(minResidentMessages)
 	}
 	return limit
 }

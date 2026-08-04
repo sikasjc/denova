@@ -362,6 +362,13 @@ export function SettingsView({ onClose }: { onClose?: () => void }) {
           <BoolTri label={t('settings.agent.planModeDefault')} value={draft.plan_mode_default ?? null}
                    effective={effective.plan_mode_default}
                    onChange={(v) => setField('plan_mode_default', v)} />
+          <Num label={t('settings.agent.chatResidentMessageLimit')} value={draft.chat_resident_message_limit ?? null}
+               placeholder={placeholderFor('chat_resident_message_limit')}
+               min={0}
+               onChange={(v) => setField('chat_resident_message_limit', v)} />
+          <div className="rounded-[var(--nova-radius)] border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-3 py-2 text-xs leading-5 text-[var(--nova-text-faint)]">
+            {t('settings.agent.chatResidentMessageLimitHelp')}
+          </div>
           <Text label={t('settings.agent.writingSkillDefault')} value={draft.writing_skill_default}
                 placeholder={placeholderFor('writing_skill_default')}
                 onChange={(v) => setField('writing_skill_default', v)} />

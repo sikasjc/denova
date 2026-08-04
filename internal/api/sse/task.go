@@ -50,6 +50,7 @@ func StreamTask(c *app.RequestContext, task *novaApp.Task, options ...StreamOpti
 		}()
 		var snapshot []agent.Event
 		snapshot, ch = task.Subscribe()
+		snapshot = coalesceReplaySnapshot(snapshot)
 		log.Printf("[agent-sse] stream start task_id=%s replay=%d", task.ID(), len(snapshot))
 		writeSSE := newSSEWriteHandler(pw, options...)
 
@@ -96,6 +97,7 @@ func StreamTaskUI(c *app.RequestContext, task *novaApp.Task, options ...StreamOp
 		}()
 		var snapshot []agent.Event
 		snapshot, ch = task.Subscribe()
+		snapshot = coalesceReplaySnapshot(snapshot)
 		log.Printf("[agent-ui-sse] stream start task_id=%s replay=%d", task.ID(), len(snapshot))
 		writeUI := newUIWriteHandler(pw, options...)
 

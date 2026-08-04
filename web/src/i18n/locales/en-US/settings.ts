@@ -4,6 +4,8 @@ const settings = {
   'settings.agent.idleTimeoutSeconds': 'Idle Timeout (s, 0 = unlimited)',
   'settings.agent.toolResultLimitKB': 'Tool Result Safety Limit (KB)',
   'settings.agent.planModeDefault': 'Default PlanMode',
+  'settings.agent.chatResidentMessageLimit': 'Resident Chat Messages (0 = unlimited)',
+  'settings.agent.chatResidentMessageLimitHelp': 'Caps how many chat/game messages stay in memory. Older messages are unloaded once the limit is exceeded and can be brought back via “Load earlier”. Lower values reduce memory use in very long conversations.',
   'settings.agent.writingSkillDefault': 'Default Writing Skill',
   'settings.access.allowLan': 'Allow LAN Access',
   'settings.access.password': 'Remote Access Password',

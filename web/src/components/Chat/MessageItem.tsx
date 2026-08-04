@@ -22,6 +22,7 @@ import { Plan, PlanContent, PlanHeader } from '@/components/ai-elements/plan'
 import { Tool, ToolContent } from '@/components/ai-elements/tool'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { StreamingContentStage } from './StreamingContentStage'
+import { splitMarkdownBlocks } from '@/lib/streaming/markdown-blocks'
 
 interface MessageItemProps {
   message: ChatMessage
@@ -1585,9 +1586,26 @@ function sanitizeThinkTags(text: string): string {
   return result.replace(/<\/?\s*think\s*>/gi, '')
 }
 
-const MarkdownContent = memo(function MarkdownContent({ content, highlightDialogue }: { content: string; highlightDialogue: boolean }) {
+/**
+ * 单个 Markdown 块渲染器。已封口的块 content 稳定，memo 可跳过重解析；
+ * 只有流式末尾未封口的块会随内容增长而重解析，把整段 O(n^2) 重解析压成 O(n)。
+ */
+const MarkdownBlock = memo(function MarkdownBlock({ content, highlightDialogue }: { content: string; highlightDialogue: boolean }) {
   return (
     <MarkdownRenderer content={content} components={highlightDialogue ? dialogueMarkdownComponents : markdownComponents} />
+  )
+})
+
+const MarkdownContent = memo(function MarkdownContent({ content, highlightDialogue }: { content: string; highlightDialogue: boolean }) {
+  // 流式与非流式共用同一套分块，保证顶层元素序列（DOM 结构）一致；
+  // 块间无包裹节点（MarkdownRenderer 返回 Fragment），因此块级渲染不改变 .chat-agent-message 的直接子节点。
+  const blocks = splitMarkdownBlocks(content)
+  return (
+    <>
+      {blocks.map((block, index) => (
+        <MarkdownBlock key={index} content={block} highlightDialogue={highlightDialogue} />
+      ))}
+    </>
   )
 })
 

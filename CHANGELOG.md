@@ -8,13 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- 新增用户级配置「常驻聊天消息数」（`chat_resident_message_limit`，位于设置 → Agent，默认 400，填 0 表示不限制）：限制聊天/游戏视图在内存中保留的消息条数，超出后最早的消息移出内存以控制超长多轮会话的内存占用，被移出的消息可通过「加载更早」从后端重新拉回。写作与游戏模式共用同一机制。
+- Added a user-level "Resident Chat Messages" setting (`chat_resident_message_limit`, under Settings → Agent, default 400, 0 means unlimited): it caps how many chat/game messages stay in memory, unloading the oldest once the limit is exceeded to bound memory in very long conversations. Unloaded messages can be brought back via "Load earlier". Shared by both Writing and Interactive modes.
 - 书籍下载新增 EPUB 格式：导出为标准 EPUB 3.0 电子书，按分卷与章节生成可跳转目录（分卷为父级、章节为子级），并在存在书籍封面时自动内嵌为电子书封面。书籍管理页的「导出」按钮改为下拉菜单，可选择「导出 TXT」或「导出 EPUB（带章节）」，写作与游戏模式共用同一入口。
 - Book download now supports EPUB: export a standard EPUB 3.0 e-book with a navigable table of contents built from volumes and chapters (volumes as parents, chapters as nested entries), and the book cover is embedded automatically when present. The "Export" action on the Book Management page is now a dropdown offering "Export TXT" or "Export EPUB (with chapters)", shared by both Writing and Interactive modes.
 
 ### Changed
 
+- 流式 Markdown 渲染改为块级增量：正文按空行/代码块边界切分为多个块，已完成的块记忆化后不再重解析，仅末尾进行中的块每帧重解析，把整段每帧全量解析的 O(n²) 开销降为 O(n)。流式与非流式共用同一分块逻辑，保证 DOM 结构一致。写作与游戏模式共享此渲染路径。
+- Streaming Markdown rendering is now block-level and incremental: content is split into blocks at blank-line/code-fence boundaries, completed blocks are memoized and never re-parsed, and only the trailing in-progress block re-parses each frame — turning the previous O(n²) whole-content re-parse into O(n). Streaming and persisted messages share the same splitting logic, keeping DOM structure identical. Shared by both Writing and Interactive modes.
+- 会话流重连（resume）时的事件回放改为无损合并：把回放快照中连续同源的 `chunk`/`thinking` 与按工具聚合的 `tool_args_delta` 合并为单事件，事件对象数从「每个 token 一个」塌缩为「每段一个」，重建内容完全一致，但重连时不再逐条回放海量增量。仅作用于回放快照，不影响实时输出。
+- Stream reconnect (resume) now coalesces replayed events losslessly: consecutive same-source `chunk`/`thinking` events and per-tool `tool_args_delta` events in the replay snapshot are merged into single events, collapsing the object count from "one per token" to "one per segment" with identical rebuilt content, so reconnecting no longer replays a massive number of deltas one by one. Applies only to the replay snapshot, never to live output.
 - 书籍导出重构为「结构化稿件模型 + 按格式渲染」：`internal/book` 统一产出标题/作者/分卷/章节的 `Manuscript`，新增 `internal/bookexport` 分别渲染 TXT 与 EPUB，使章节分组与标题去重逻辑只维护一处，且 EPUB 依赖不侵入核心 `book` 包。
 - Book export was refactored into a structured manuscript model plus per-format renderers: `internal/book` produces a single `Manuscript` (title/author/volumes/chapters), and the new `internal/bookexport` package renders TXT and EPUB separately, so chapter grouping and heading de-duplication live in one place and the EPUB dependency stays out of the core `book` package.
+
+### Fixed
+
+- 修复大模型长时间大量输出时聊天页面卡死：根因是流式正文每帧被整段重新解析 Markdown（O(n²)），现改为块级增量渲染，长文流式期间输入、滚动、按钮保持响应。
+- Fixed the chat page freezing during long, high-volume model output: the root cause was re-parsing the entire streaming body's Markdown on every frame (O(n²)). With block-level incremental rendering, input, scrolling, and buttons stay responsive while long content streams.
+- 修复刷新/重启后因回放巨型进行中消息导致的前端内存溢出（OOM）：会话流重连时的增量事件回放已合并压缩，配合常驻消息上限，重连不再一次性把海量增量重建进内存。
+- Fixed the frontend out-of-memory (OOM) on refresh/restart caused by replaying a huge in-progress message: the incremental-event replay on stream reconnect is now coalesced, and together with the resident-message cap, reconnecting no longer rebuilds a massive number of deltas into memory at once.
+
 
 ## [v0.3.3] - 2026-07-25
 

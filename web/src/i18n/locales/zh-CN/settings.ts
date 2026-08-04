@@ -4,6 +4,8 @@ const settings = {
   'settings.agent.idleTimeoutSeconds': '空闲超时（秒，0 为不限制）',
   'settings.agent.toolResultLimitKB': '工具结果安全上限（KB）',
   'settings.agent.planModeDefault': '默认 PlanMode',
+  'settings.agent.chatResidentMessageLimit': '常驻聊天消息数（0 为不限制）',
+  'settings.agent.chatResidentMessageLimitHelp': '限制聊天/游戏视图在内存中保留的消息条数。超出后最早的消息会被移出内存，可通过“加载更早”重新拉回。数值越小，超长多轮会话占用的内存越少。',
   'settings.agent.writingSkillDefault': '默认写作 Skill',
   'settings.access.allowLan': '允许局域网访问',
   'settings.access.password': '远程访问密码',

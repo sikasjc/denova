@@ -12,6 +12,7 @@ import {
   getSessions,
   renameSession,
   switchSession,
+  DEFAULT_SESSION_MESSAGE_PAGE_SIZE,
 } from '@/lib/api'
 import type { ContextAnalysis, IDEContext, SessionSummary, TextSelection } from '@/lib/api'
 import type { UserMessageReference } from '@/lib/api-client/types'
@@ -74,9 +75,16 @@ export function useAgentChat(options: ChatOptions = {}) {
       window.dispatchEvent(new CustomEvent('nova:workspace-change', { detail: event }))
       void onWorkspaceChange?.(event)
     },
-    onFinish: () => { void onAgentFileChange?.() },
+    onFinish: () => {
+      void onAgentFileChange?.()
+      // 一轮结束后（非流式期）按常驻上限裁剪，AI SDK 此刻不再写入该 state，裁剪安全。
+      trimResidentMessagesRef.current()
+    },
   })
   const messages = useMemo(() => normalizeAgentUIMessages(uiMessages), [uiMessages])
+  // 镜像最新 uiMessages，供 onFinish（渲染外）读取当前长度做常驻裁剪判断。
+  const uiMessagesRef = useRef<AgentUIMessage[]>(uiMessages)
+  uiMessagesRef.current = uiMessages
   const isStreaming = status === 'submitted' || status === 'streaming'
   const activityContent = status === 'submitted' ? t('chat.activity.thinking') : ''
   const [sessions, setSessions] = useState<SessionSummary[]>([])
@@ -96,15 +104,25 @@ export function useAgentChat(options: ChatOptions = {}) {
     nextBefore: '0',
     hasMore: false,
   })
+  // 前端常驻消息上限（0/未设置=不限制）。用于超长多轮会话的内存控制。
+  const residentMessageLimitRef = useRef(0)
+  // 用户显式"加载更早"后暂停自动裁剪，尊重其查看历史的意图；切换/重载会话时重置。
+  const manualHistoryExpandedRef = useRef(false)
+  // 记录常驻窗口是否因裁剪而截断了更早消息（用于展示"加载更早"入口）。
+  const residentTrimmedRef = useRef(false)
+  const trimResidentMessagesRef = useRef<() => void>(() => {})
   const activePlanMode = planModeForSession(planModes, activeSessionId, defaultPlanMode)
 
   useEffect(() => {
     let cancelled = false
     fetchSettings()
       .then((data) => {
-        if (!cancelled) setDefaultPlanMode(data.effective?.plan_mode_default === true)
+        if (cancelled) return
+        setDefaultPlanMode(data.effective?.plan_mode_default === true)
+        const limit = data.effective?.chat_resident_message_limit
+        residentMessageLimitRef.current = typeof limit === 'number' && limit > 0 ? limit : 0
       })
-      .catch((e) => console.warn('加载 Plan Mode 默认配置失败', e))
+      .catch((e) => console.warn('加载 Agent 聊天配置失败', e))
     return () => { cancelled = true }
   }, [])
 
@@ -142,6 +160,8 @@ export function useAgentChat(options: ChatOptions = {}) {
     historyRequestGenerationRef.current = generation
     earlierHistoryRequestRef.current += 1
     earlierHistoryLoadingRef.current = false
+    manualHistoryExpandedRef.current = false
+    residentTrimmedRef.current = false
     setIsLoadingEarlierHistory(false)
     try {
       const page = await getMessagesPage(sessionId)
@@ -159,14 +179,34 @@ export function useAgentChat(options: ChatOptions = {}) {
   }, [setUIMessages])
 
   const loadEarlierHistory = useCallback(async () => {
+    // 用户显式查看更早历史：暂停后续自动裁剪，避免刚拉回又被裁掉。
+    manualHistoryExpandedRef.current = true
     const currentPage = historyPageRef.current
-    if (!currentPage.hasMore || earlierHistoryLoadingRef.current) return
+    if (earlierHistoryLoadingRef.current) return
+    // 常驻裁剪过的会话，"更早消息"来自被裁掉的部分而非分页游标之前；
+    // 直接以更大的窗口从后端重新拉取一段连续历史，游标准确、无空洞。
+    const trimmed = residentTrimmedRef.current
+    if (!trimmed && !currentPage.hasMore) return
     const historyGeneration = historyRequestGenerationRef.current
     const requestID = earlierHistoryRequestRef.current + 1
     earlierHistoryRequestRef.current = requestID
     earlierHistoryLoadingRef.current = true
     setIsLoadingEarlierHistory(true)
     try {
+      if (trimmed) {
+        const window = residentMessageLimitRef.current + DEFAULT_SESSION_MESSAGE_PAGE_SIZE
+        const page = await getMessagesPage(currentPage.sessionId, { limit: window })
+        if (historyGeneration !== historyRequestGenerationRef.current || requestID !== earlierHistoryRequestRef.current) return
+        residentTrimmedRef.current = false
+        historyPageRef.current = {
+          sessionId: currentPage.sessionId,
+          nextBefore: page.nextBefore,
+          hasMore: page.hasMore,
+        }
+        setHasEarlierMessages(page.hasMore)
+        setUIMessages(filterInternalPlanUIMessages(page.messages))
+        return
+      }
       const page = await getMessagesPage(currentPage.sessionId, { before: currentPage.nextBefore })
       if (historyGeneration !== historyRequestGenerationRef.current || requestID !== earlierHistoryRequestRef.current) return
       const earlierMessages = filterInternalPlanUIMessages(page.messages)
@@ -193,6 +233,18 @@ export function useAgentChat(options: ChatOptions = {}) {
     historyRequestGenerationRef.current += 1
     earlierHistoryRequestRef.current += 1
   }, [])
+
+  // 常驻裁剪：一轮结束后把 React state 中的消息裁到最近 N 条，控制超长会话的内存占用。
+  // 被裁掉的更早消息不会丢失——它们已持久化在后端，可通过"加载更早"重新拉回。
+  const trimResidentMessages = useCallback(() => {
+    const limit = residentMessageLimitRef.current
+    if (limit <= 0 || manualHistoryExpandedRef.current) return
+    if (uiMessagesRef.current.length <= limit) return
+    residentTrimmedRef.current = true
+    setUIMessages((current) => (current.length <= limit ? current : current.slice(current.length - limit)))
+    setHasEarlierMessages(true)
+  }, [setUIMessages])
+  trimResidentMessagesRef.current = trimResidentMessages
 
   const addReference = useCallback((path: string) => {
     setReferences(prev => Array.from(new Set([...prev, path])))

@@ -50,6 +50,7 @@ export interface Settings {
   trace_exporter?: string
   trace_retention_runs?: number | null
   plan_mode_default?: boolean | null
+  chat_resident_message_limit?: number | null
   ide_story_teller_id?: string
   ide_image_preset_id?: string
   writing_skill_default?: string

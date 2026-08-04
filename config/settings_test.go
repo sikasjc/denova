@@ -475,6 +475,54 @@ func TestWriteSettingsFileFiltersNegativeAgentToolResultLimit(t *testing.T) {
 	}
 }
 
+func TestWriteSettingsFileAllowsUnlimitedChatResidentMessageLimit(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.toml")
+	in := Settings{OpenAIModel: "abc", ChatResidentMessageLimit: intPtr(0)}
+	if err := WriteSettingsFile(p, in); err != nil {
+		t.Fatal(err)
+	}
+	out, err := ReadSettingsFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.ChatResidentMessageLimit == nil || *out.ChatResidentMessageLimit != 0 {
+		t.Fatalf("chat resident message limit should preserve explicit 0 (unlimited), got %v", out.ChatResidentMessageLimit)
+	}
+}
+
+func TestWriteSettingsFileClampsTinyChatResidentMessageLimit(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.toml")
+	in := Settings{OpenAIModel: "abc", ChatResidentMessageLimit: intPtr(3)}
+	if err := WriteSettingsFile(p, in); err != nil {
+		t.Fatal(err)
+	}
+	out, err := ReadSettingsFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.ChatResidentMessageLimit == nil || *out.ChatResidentMessageLimit != 20 {
+		t.Fatalf("tiny chat resident message limit should be clamped up to the floor, got %v", out.ChatResidentMessageLimit)
+	}
+}
+
+func TestWriteSettingsFileFiltersNegativeChatResidentMessageLimit(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.toml")
+	in := Settings{OpenAIModel: "abc", ChatResidentMessageLimit: intPtr(-1)}
+	if err := WriteSettingsFile(p, in); err != nil {
+		t.Fatal(err)
+	}
+	out, err := ReadSettingsFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.ChatResidentMessageLimit != nil {
+		t.Fatalf("negative chat resident message limit should be filtered, got %v", *out.ChatResidentMessageLimit)
+	}
+}
+
 func TestPrepareUserSettingsForWriteHashesRemoteAccessPassword(t *testing.T) {
 	enabled := true
 	prepared, err := PrepareUserSettingsForWrite(Settings{}, Settings{
