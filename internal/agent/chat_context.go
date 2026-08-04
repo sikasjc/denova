@@ -12,8 +12,36 @@ import (
 
 const maxStyleRuleContextChars = 32000
 
-// appendWritingSkillLoadHint 只提示本轮选中的 Writing Skill 名称；完整
-// SKILL.md 必须由模型在判断需要正文续写/创作时通过 skill 工具自行加载。
+func appendLoadedWritingSkill(message string, loaded LoadedWritingSkill, logs ...*contextBuildLog) string {
+	name := strings.TrimSpace(loaded.Name)
+	content := strings.TrimSpace(loaded.Content)
+	if name == "" || content == "" {
+		return message
+	}
+	var sb strings.Builder
+	sb.WriteString(message)
+	sb.WriteString("\n\n# 已加载的内置 Writing Skill\n\n")
+	sb.WriteString("本轮已直接加载内置 Writing Skill `")
+	sb.WriteString(name)
+	sb.WriteString("`；不要再调用 `skill` 工具加载同名 Skill。写作范围仍只由用户本轮自然语言指令决定。\n")
+	if baseDirectory := strings.TrimSpace(loaded.BaseDirectory); baseDirectory != "" {
+		sb.WriteString("Skill 目录：")
+		sb.WriteString(baseDirectory)
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n<writing_skill name=\"")
+	sb.WriteString(name)
+	sb.WriteString("\">\n")
+	sb.WriteString(content)
+	sb.WriteString("\n</writing_skill>\n")
+
+	addContextLog(logs, "注入规则", "内置 Writing Skill（直接加载）", sb.String()[len(message):],
+		fmt.Sprintf("name=%s chars=%d", name, len([]rune(content))))
+	return sb.String()
+}
+
+// appendWritingSkillLoadHint 只提示动态 Writing Skill 名称；完整 SKILL.md
+// 必须由模型在判断需要正文续写/创作时通过 skill 工具自行加载。
 func appendWritingSkillLoadHint(message, skillName string, logs ...*contextBuildLog) string {
 	skillName = strings.TrimSpace(skillName)
 	if skillName == "" {

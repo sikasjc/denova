@@ -53,6 +53,18 @@ type ChatRequest struct {
 	// ResolvedReviewFeedback is populated by the app layer from a canonical
 	// workspace review ledger. Clients may submit IDs only, never comment text.
 	ResolvedReviewFeedback ReviewFeedbackContexts `json:"-"`
+
+	// LoadedWritingSkill is populated only for an active built-in Writing
+	// preset. User/workspace overrides remain dynamically loaded through the
+	// skill tool so their precedence and supporting files stay intact.
+	LoadedWritingSkill *LoadedWritingSkill `json:"-"`
+}
+
+type LoadedWritingSkill struct {
+	Name          string
+	Description   string
+	Content       string
+	BaseDirectory string
 }
 
 // StyleRule 是 prompts.StyleRule 的镜像，避免调用方直接依赖 prompts 包。

@@ -13,6 +13,7 @@ import (
 	"denova/internal/imagepreset"
 	"denova/internal/interactive"
 	"denova/internal/session"
+	novaskills "denova/internal/skills"
 	"denova/internal/styleref"
 )
 
@@ -437,7 +438,7 @@ func (s *ChatAppService) prepareIDEChatRuntime(ctx context.Context, req agent.Ch
 		applyRequestLocaleToConfig(&runtime.cfg, req.Locale)
 	}
 	applyImagePresetRuntimePolicy(&runtime, &req)
-	if err := applyWritingSkillRuntimePolicy(&runtime, &req); err != nil {
+	if err := applyWritingSkillRuntimePolicy(ctx, &runtime, &req); err != nil {
 		return ideChatRuntime{}, req, err
 	}
 	if err := s.resolveReviewFeedback(ctx, runtime, &req); err != nil {
@@ -502,13 +503,72 @@ func applyImagePresetRuntimePolicy(runtime *ideChatRuntime, req *agent.ChatReque
 	log.Printf("[agent-task] selected image preset id=%s name=%q workspace=%s agent_system_chars=%d tool_request_chars=%d", req.ImagePreset.ID, req.ImagePreset.Name, runtime.workspace, len([]rune(agentSystemPrompt)), len([]rune(toolRequestPrompt)))
 }
 
-func applyWritingSkillRuntimePolicy(runtime *ideChatRuntime, req *agent.ChatRequest) error {
+func applyWritingSkillRuntimePolicy(ctx context.Context, runtime *ideChatRuntime, req *agent.ChatRequest) error {
 	if runtime == nil || req == nil {
 		return nil
 	}
 	req.WritingSkill = agent.ResolveWritingSkillName(&runtime.cfg, req.WritingSkill)
-	log.Printf("[agent-task] selected writing skill name=%s workspace=%s", req.WritingSkill, runtime.workspace)
+	req.LoadedWritingSkill = nil
+	if !agent.ShouldInlineWritingSkill(*req) {
+		log.Printf("[agent-task] selected writing skill name=%s delivery=dynamic reason=non_writing_or_ambiguous workspace=%s",
+			req.WritingSkill, runtime.workspace)
+		return nil
+	}
+	backend := novaskills.NewAgentBackend(
+		novaskills.NewDirectories(runtime.cfg.SkillsDir, runtime.cfg.DataDir(), runtime.workspace),
+		config.AgentKindIDE,
+		config.ResolveAgentSkillOverrides(&runtime.cfg, config.AgentKindIDE),
+	)
+	resolved, err := backend.Resolve(ctx, req.WritingSkill)
+	if err == nil && resolved.Scope == novaskills.ScopeBuiltin && agent.IsBuiltinWritingPreset(req.WritingSkill) {
+		req.LoadedWritingSkill = &agent.LoadedWritingSkill{
+			Name:          resolved.Name,
+			Description:   resolved.Description,
+			Content:       resolved.Content,
+			BaseDirectory: resolved.BaseDirectory,
+		}
+		for _, preset := range agent.BuiltinWritingPresetNames() {
+			disableRequestSkill(&runtime.cfg, preset)
+		}
+		disableBuiltinRequestSkills(ctx, backend, &runtime.cfg, "continue", "rewrite")
+		log.Printf("[agent-task] selected writing skill name=%s source=builtin delivery=inline chars=%d workspace=%s",
+			req.WritingSkill, len([]rune(resolved.Content)), runtime.workspace)
+		return nil
+	}
+	if err != nil {
+		log.Printf("[agent-task] selected writing skill name=%s source=unresolved delivery=dynamic workspace=%s err=%v",
+			req.WritingSkill, runtime.workspace, err)
+		return nil
+	}
+	log.Printf("[agent-task] selected writing skill name=%s source=%s delivery=dynamic workspace=%s",
+		req.WritingSkill, resolved.Scope, runtime.workspace)
 	return nil
+}
+
+func disableBuiltinRequestSkills(ctx context.Context, backend *novaskills.Backend, cfg *config.Config, names ...string) {
+	if backend == nil || cfg == nil {
+		return
+	}
+	for _, name := range names {
+		resolved, err := backend.Resolve(ctx, name)
+		if err != nil || resolved.Scope != novaskills.ScopeBuiltin {
+			continue
+		}
+		disableRequestSkill(cfg, name)
+	}
+}
+
+func disableRequestSkill(cfg *config.Config, name string) {
+	if cfg == nil || strings.TrimSpace(name) == "" {
+		return
+	}
+	current := cfg.AgentSkills.IDE
+	override := make(config.AgentSkillOverride, len(current)+1)
+	for skillName, enabled := range current {
+		override[skillName] = enabled
+	}
+	override[name] = false
+	cfg.AgentSkills.IDE = override
 }
 
 // ActiveTask 返回当前活跃任务（可能为 nil）。

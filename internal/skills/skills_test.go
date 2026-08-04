@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	einoskill "github.com/cloudwego/eino/adk/middlewares/skill"
@@ -40,6 +41,14 @@ func TestBackendWorkspaceOverridesUserAndBuiltin(t *testing.T) {
 	}
 	if outline.Description != "workspace desc" {
 		t.Fatalf("outline description = %q, want workspace desc", outline.Description)
+	}
+	resolved, err := backend.Resolve(ctx, "outline")
+	if err != nil {
+		t.Fatalf("Resolve(outline) error = %v", err)
+	}
+	if resolved.Scope != ScopeWorkspace || resolved.Description != "workspace desc" ||
+		!strings.Contains(resolved.Content, "Describe when to use this skill") {
+		t.Fatalf("resolved outline = %#v", resolved)
 	}
 
 	snapshot, err := SnapshotFor(ctx, []Directory{

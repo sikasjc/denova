@@ -16,6 +16,14 @@ type Backend struct {
 	overrides map[string]bool
 }
 
+type ResolvedSkill struct {
+	Name          string
+	Description   string
+	Content       string
+	BaseDirectory string
+	Scope         Scope
+}
+
 func NewBackend(dirs []Directory) *Backend {
 	return &Backend{dirs: dedupeDirectories(dirs)}
 }
@@ -43,4 +51,21 @@ func (b *Backend) Get(ctx context.Context, name string) (einoskill.Skill, error)
 		}
 	}
 	return einoskill.Skill{}, fmt.Errorf("skill not found: %s", name)
+}
+
+func (b *Backend) Resolve(ctx context.Context, name string) (ResolvedSkill, error) {
+	name = strings.TrimSpace(name)
+	for _, rec := range b.activeRecords(ctx) {
+		if rec.skill.Name != name {
+			continue
+		}
+		return ResolvedSkill{
+			Name:          rec.skill.Name,
+			Description:   rec.skill.Description,
+			Content:       rec.skill.Content,
+			BaseDirectory: rec.skill.BaseDirectory,
+			Scope:         rec.summary.Scope,
+		}, nil
+	}
+	return ResolvedSkill{}, fmt.Errorf("skill not found: %s", name)
 }
