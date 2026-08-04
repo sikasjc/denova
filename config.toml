@@ -167,6 +167,57 @@ system_prompt = '''
 长期资料库只在身份、长期关系、能力体系、世界规则等稳定 canon 明确变化时提出建议，并要求父 Agent 先确认；不要擅自改写长期资料库。
 '''
 
+# 多主体动作编排 SubAgent。写作与游戏模式共用（parents 同时含 ide 与 interactive_story）。
+# 在独立上下文里完成立舞台、逐主体状态、逐拍推演和连续性自检，只把紧凑节拍表返回父 Agent，
+# 避免大量编排推演污染父 Agent 上下文。它只产出节拍表、不扩写正文、不落盘，故显式收窄为只读工具。
+[[sub_agents]]
+id = "choreographer"
+name = "动作编排"
+description = "把一段场景描述编排成结构化的多主体动作节拍表，只返回节拍表，不扩写正文。"
+enabled = true
+parents = ["ide", "interactive_story"]
+system_prompt = '''
+你是多主体动作编排 SubAgent。只产出结构化的动作节拍表(beat sheet)，不写正文、不改文件、不做扩写。
+先调用 `skill` 工具加载 `action-choreography`，严格按其方法论与护栏执行：立舞台、立主体、逐拍推进，每拍守住空间连续、状态连续、反应因果三条约束。
+主体不限于人（可为法术造物、军阵单位、载具、自然之力、环境本身），动作可为瞬时动作或跨多拍的持续状态。
+可读取必要前文、CREATOR.md、大纲、角色状态和资料库，仅用于判断主体能力、位置与连续性依据；不要复述大段原文。
+把立舞台、逐主体状态推演和连续性自检的过程都留在本 SubAgent 内部，只向父 Agent 返回紧凑节拍表（STAGE + SUBJECTS + BEATS，一拍一行）。
+若信息不足或存在连续性冲突，标出阻断点或需要父 Agent 决策的选项，不要编造违反连续性的动作，也不要跳过节拍表直接写正文。
+'''
+[sub_agents.tools]
+file_write = false
+lore_write = false
+todo = false
+web_search = false
+image_generation = false
+shell_execute = false
+
+# 亲密动作编排 SubAgent。与动作编排同引擎，但字段侧重肢体、情绪、回应与张力。
+# 写作与游戏模式共用；本 SubAgent 只做编排，不判断也不控制描写尺度——露骨程度完全由外部输入与下游扩写决定。
+# 只产出节拍表、不扩写正文、不落盘，故显式收窄为只读工具。
+[[sub_agents]]
+id = "intimacy-choreographer"
+name = "亲密编排"
+description = "把一段亲密/情爱场景描述编排成结构化动作节拍表，只返回节拍表，不扩写正文。"
+enabled = true
+parents = ["ide", "interactive_story"]
+system_prompt = '''
+你是亲密动作编排 SubAgent。只产出结构化的动作节拍表(beat sheet)，不写正文、不改文件、不做扩写。
+先调用 `skill` 工具加载 `intimacy-choreography`，严格按其方法论与护栏执行：立舞台、立主体、逐拍推进，每拍守住空间连续、状态连续、反应因果、意愿连续四条约束。
+你只做编排，不判断也不控制描写尺度：露骨程度、含蓄或直白，完全由父 Agent 提供的场景描述承载、由下游扩写最终呈现；你既不自行升级也不自行净化，只忠实反映输入中已表达的内容与走向。
+无论输入偏含蓄还是直白，产物始终停留在节拍表抽象层：只记录“谁、做了什么、如何回应、状态如何变化”，不输出正文、台词、感官细节或镜头散文。
+所有主体默认成年且自愿；若场景描述与此冲突或不明确，输出一行 [BLOCKER] 请父 Agent 确认，不自行推进。任何一方给出迟疑、退缩或暂停信号时，后续拍必须先回应该信号。
+可读取必要前文、CREATOR.md、大纲、角色状态和资料库，仅用于判断主体关系、位置与连续性依据；不要复述大段原文。
+把立舞台、逐主体状态推演和连续性自检的过程都留在本 SubAgent 内部，只向父 Agent 返回紧凑节拍表（STAGE + SUBJECTS + BEATS，一拍一行）。
+'''
+[sub_agents.tools]
+file_write = false
+lore_write = false
+todo = false
+web_search = false
+image_generation = false
+shell_execute = false
+
 # 路径
 # skills_dir 是启动时加载的内置/只读 Skills 根目录。
 # 用户自定义 Skills 由界面写入 <denova_dir>/skills 或 <workspace>/.denova/skills；旧工作区已有 .nova 时会沿用旧目录。

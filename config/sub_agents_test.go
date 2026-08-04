@@ -63,19 +63,40 @@ func TestConfigTemplatePreseedsWritingSubAgentsAsEditableConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"context-planner", "writer", "reviewer", "fixer", "final-gate", "memory-patcher"}
+	// The template preseeds the IDE-only writing pipeline plus cross-mode
+	// choreography SubAgents shared by Writing and Interactive modes.
+	writingOnly := []string{"context-planner", "writer", "reviewer", "fixer", "final-gate", "memory-patcher"}
+	crossMode := []string{"choreographer", "intimacy-choreographer"}
+	want := append(append([]string{}, writingOnly...), crossMode...)
 	if got := subAgentIDs(settings.SubAgents); !reflect.DeepEqual(got, want) {
-		t.Fatalf("template writing subagents = %#v, want %#v", got, want)
+		t.Fatalf("template subagents = %#v, want %#v", got, want)
+	}
+	ideOnly := map[string]bool{}
+	for _, id := range writingOnly {
+		ideOnly[id] = true
+	}
+	crossModeSet := map[string]bool{}
+	for _, id := range crossMode {
+		crossModeSet[id] = true
 	}
 	for _, sub := range settings.SubAgents {
 		if !SubAgentEnabled(sub) {
-			t.Fatalf("template writing subagent should be enabled: %#v", sub)
-		}
-		if len(sub.Parents) != 1 || sub.Parents[0] != AgentKindIDE {
-			t.Fatalf("template writing subagent should only belong to IDE: %#v", sub)
+			t.Fatalf("template subagent should be enabled: %#v", sub)
 		}
 		if sub.SystemPrompt == "" || containsASCIIOnly(sub.SystemPrompt) {
-			t.Fatalf("template writing subagent prompt should be Chinese and non-empty: %#v", sub)
+			t.Fatalf("template subagent prompt should be Chinese and non-empty: %#v", sub)
+		}
+		switch {
+		case ideOnly[sub.ID]:
+			if len(sub.Parents) != 1 || sub.Parents[0] != AgentKindIDE {
+				t.Fatalf("writing subagent should only belong to IDE: %#v", sub)
+			}
+		case crossModeSet[sub.ID]:
+			if !SubAgentAllowedForParent(sub, AgentKindIDE) || !SubAgentAllowedForParent(sub, AgentKindInteractiveStory) {
+				t.Fatalf("choreography subagent should be shared by IDE and Interactive modes: %#v", sub)
+			}
+		default:
+			t.Fatalf("unexpected template subagent: %#v", sub)
 		}
 	}
 }
