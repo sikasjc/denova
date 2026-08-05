@@ -182,13 +182,14 @@ describe('SettingsView user scope', () => {
     const editor = screen.getByText('快捷创作按钮').closest('.nova-settings-row')
     expect(editor).not.toBeNull()
     expect(within(editor as HTMLElement).getAllByLabelText('按钮名称')).toHaveLength(2)
+    fireEvent.change(within(editor as HTMLElement).getAllByLabelText('任务类型')[0], { target: { value: 'prose_revision' } })
 
     await act(async () => { await vi.advanceTimersByTimeAsync(1100) })
 
     expect(updateUserSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         writing_quick_actions: expect.arrayContaining([
-          expect.objectContaining({ id: 'custom-review', label: '检查并建议', prompt: '检查 {target}' }),
+          expect.objectContaining({ id: 'custom-review', label: '检查并建议', prompt: '检查 {target}', intent: 'prose_revision' }),
           expect.objectContaining({ id: expect.stringContaining('custom-') }),
         ]),
       }),

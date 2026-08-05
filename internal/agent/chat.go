@@ -11,6 +11,7 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
 
+	"denova/config"
 	"denova/internal/book"
 	"denova/internal/observability"
 	"denova/internal/prompts"
@@ -30,18 +31,19 @@ type Event struct {
 
 // ChatRequest 表示一次聊天请求的传输无关参数。
 type ChatRequest struct {
-	Message        string             `json:"message"`
-	References     []string           `json:"references"`
-	LoreReferences []string           `json:"lore_references"`
-	StyleScenes    []string           `json:"style_scenes"`
-	Selections     []TextSelectionRef `json:"selections"`
-	IDEContext     IDEContextRef      `json:"ide_context,omitempty"`
-	ReviewFeedback ReviewFeedbackRefs `json:"review_feedback,omitempty"`
-	PlanMode       bool               `json:"plan_mode"`
-	WritingSkill   string             `json:"writing_skill"`
-	ImagePresetID  string             `json:"image_preset_id"`
-	TellerID       string             `json:"teller_id"`
-	Locale         string             `json:"-"`
+	Message        string               `json:"message"`
+	References     []string             `json:"references"`
+	LoreReferences []string             `json:"lore_references"`
+	StyleScenes    []string             `json:"style_scenes"`
+	Selections     []TextSelectionRef   `json:"selections"`
+	IDEContext     IDEContextRef        `json:"ide_context,omitempty"`
+	ReviewFeedback ReviewFeedbackRefs   `json:"review_feedback,omitempty"`
+	PlanMode       bool                 `json:"plan_mode"`
+	WritingSkill   string               `json:"writing_skill"`
+	WritingIntent  config.WritingIntent `json:"writing_intent,omitempty"`
+	ImagePresetID  string               `json:"image_preset_id"`
+	TellerID       string               `json:"teller_id"`
+	Locale         string               `json:"-"`
 
 	// StyleRules 由后端按当前导演配置注入（场景 → 共享文风参考索引）。
 	// StyleScenes 非空时只注入用户本轮通过 # 指定的场景；为空时作为场景化建议参与本轮上下文。
@@ -286,6 +288,7 @@ func (r *Runtime) Run(
 		"selections":       len(req.Selections),
 		"plan_mode":        req.PlanMode,
 		"writing_skill":    req.WritingSkill,
+		"writing_intent":   req.WritingIntent,
 		"checkpoint_id":    checkpointID,
 	}); err != nil {
 		runLogger.Warn("run_ledger_start_failed", slog.String("run_id", runID), slog.Any("error", err))
@@ -388,6 +391,7 @@ func (r *Runtime) Run(
 		"agent_message_chars": len([]rune(agentMessage)),
 		"plan_mode":           req.PlanMode,
 		"writing_skill":       req.WritingSkill,
+		"writing_intent":      req.WritingIntent,
 	})
 	runLogger.Info(
 		"context_composition",
@@ -401,6 +405,7 @@ func (r *Runtime) Run(
 		slog.String("selections", selectionListSummary(req.Selections)),
 		slog.Bool("plan_mode", req.PlanMode),
 		slog.String("writing_skill", req.WritingSkill),
+		slog.String("writing_intent", string(req.WritingIntent)),
 		slog.Bool("resumed", resumeInterruption != nil),
 	)
 	runLogger.Info("context_sources", slog.String("summary", contextLog.String()), slog.Any("sources", contextLog.Audit()))
@@ -441,7 +446,7 @@ func (r *Runtime) Run(
 		}
 		planParser = newPlanProtocolParser(planMeta, emit)
 	}
-	runLogger.Info("run_started", slog.Int("history", len(history)), slog.Int("message_len", len(req.Message)), slog.Int("agent_message_len", len(agentMessage)), slog.Bool("plan_mode", req.PlanMode), slog.String("writing_skill", req.WritingSkill), slog.Int("style_scenes", len(req.StyleScenes)), slog.Int("style_rules", len(req.StyleRules)))
+	runLogger.Info("run_started", slog.Int("history", len(history)), slog.Int("message_len", len(req.Message)), slog.Int("agent_message_len", len(agentMessage)), slog.Bool("plan_mode", req.PlanMode), slog.String("writing_skill", req.WritingSkill), slog.String("writing_intent", string(req.WritingIntent)), slog.Int("style_scenes", len(req.StyleScenes)), slog.Int("style_rules", len(req.StyleRules)))
 
 	for {
 		if err := ctx.Err(); err != nil {

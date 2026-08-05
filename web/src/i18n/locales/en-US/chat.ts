@@ -432,6 +432,15 @@ const chat = {
   'chat.quick.currentSessionHint': 'Actions fill the current conversation composer. Start a new conversation first when you need isolated context.',
   'chat.quick.empty': 'No Quick Writing actions. Open Settings to add one.',
   'chat.quick.prefillHint': 'Actions fill the composer so you can edit the prompt before sending.',
+  'chat.writingIntent.label': 'Writing Task Type',
+  'chat.writingIntent.description': 'Controls whether this turn loads the Writing preset directly; it is not inserted into the sent text.',
+  'chat.writingIntent.auto': 'Auto',
+  'chat.writingIntent.planning': 'Planning',
+  'chat.writingIntent.proseGeneration': 'Write Prose',
+  'chat.writingIntent.proseRevision': 'Revise Prose',
+  'chat.writingIntent.reviewApplication': 'Apply Review',
+  'chat.writingIntent.analysis': 'Check / Analyze',
+  'chat.writingIntent.reviewLocked': 'Review feedback is attached, so this turn is fixed to Apply Review.',
 } as const
 
 export default chat

@@ -163,7 +163,7 @@ func DefaultSettings() Settings {
 		AgentSkills:                AgentSkillSettings{},
 		AgentContexts:              DefaultAgentContextSettings(),
 		GeneralSubAgents:           DefaultAgentGeneralSubAgentSettings(),
-		SubAgents:                  nil,
+		SubAgents:                  DefaultChoreographySubAgents(),
 		PlanModeDefault:            boolPtr(false),
 		ChatResidentMessageLimit:   intPtr(DefaultChatResidentMessageLimit),
 		IDEStoryTellerID:           "classic",

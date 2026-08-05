@@ -16,7 +16,8 @@ agent: ide
 
 ## 执行
 
-- 流程：`context-planner -> writer -> reviewer -> fixer -> final-gate -> memory-patcher -> final output`。
+- 默认流程：`context-planner -> writer -> reviewer -> fixer -> final-gate -> memory-patcher -> final output`。
+- 若 Context Plan 识别出下述“复杂编排”条件，则流程变为：`context-planner -> choreographer/intimacy-choreographer -> writer -> reviewer -> fixer -> final-gate -> memory-patcher -> final output`。
 - 从用户实际指令判断范围；没有 `writing_scope` 字段。除非用户明确说“写下一章”，否则不要假设任务一定是下一章。
 - 当用户要求一次写 N 章或多段 arc 时，Context Plan 必须包含整体计划和分章计划。
 - 所有角色 subagent 都必须通过 `task` 工具委派。每次调用 `task` 时，在 description 中写清角色名、用户目标、必要上下文来源、文件路径、允许/禁止写入、期望输出格式和交付物。
@@ -29,12 +30,23 @@ agent: ide
 如果这些角色 subagent 可用，请按顺序使用：
 
 1. 使用 `task` 工具委派 `context-planner` 整理 Context Plan。
-2. 使用 `task` 工具委派 `writer` 根据计划生成正文。
-3. 使用 `task` 工具委派 `reviewer` 做一次综合审稿。
-4. 主 Agent 聚合 reviewer 与用户审阅意见，生成最小必要 Patch Plan，再使用 `task` 工具委派 `fixer` 定点修复。
-5. 使用 `task` 工具委派 `final-gate` 检查修订稿是否满足用户要求、计划、canon 和风格约束。
-6. 使用 `task` 工具委派 `memory-patcher` 生成 progress 和 character-state 等状态更新。
-7. 主 Agent 输出最终结果，以及必要的用户可见状态更新摘要。
+2. 仅当 Context Plan 标记复杂编排风险时，使用 `task` 委派一个对应 choreography SubAgent 生成 beat sheet。
+3. 使用 `task` 工具委派 `writer`，同时提供 Context Plan 和可选 beat sheet，根据计划生成正文。
+4. 使用 `task` 工具委派 `reviewer` 做一次综合审稿。
+5. 主 Agent 聚合 reviewer 与用户审阅意见，生成最小必要 Patch Plan，再使用 `task` 工具委派 `fixer` 定点修复。
+6. 使用 `task` 工具委派 `final-gate` 检查修订稿是否满足用户要求、计划、canon 和风格约束。
+7. 使用 `task` 工具委派 `memory-patcher` 生成 progress 和 character-state 等状态更新。
+8. 主 Agent 输出最终结果，以及必要的用户可见状态更新摘要。
+
+## 复杂编排
+
+Context Plan 必须判断是否需要一个专业 choreography SubAgent：
+
+- 复杂战斗、追逐、多人协作、救援/攀爬、军阵、载具或灾害，需要跨多拍跟踪位置、资源、环境与反应因果时，使用 `choreographer`。
+- 复杂亲密/情色互动，需要跨多拍跟踪多人或长段肢体位置、姿态、情绪回应、意愿信号与张力时，使用 `intimacy-choreographer`。
+- 普通对白、静态描写、简单走位、单次明确动作、单次拥抱/亲吻/触碰或纯文风修改，不需要 choreography。
+
+每个独立场景最多调用一个对应 SubAgent 一次；多章任务按场景判断，不按章节机械调用。description 传递用户目标、必要路径、人物/空间/canon 约束、只返回 beat sheet、禁止写入；亲密场景原样传递用户尺度，不自行升级或净化。beat sheet 只作为 writer 内部约束，除非用户要求，不直接展示。
 
 ## Context Plan
 
@@ -63,6 +75,9 @@ agent: ide
 
 ## Risks
 本次最容易写崩的地方。
+
+## Choreography Need
+是否需要 `choreographer` 或 `intimacy-choreographer`；若需要，写清场景、风险、路径和用户尺度/风格；否则写 `none` 和理由。
 ```
 
 如果用户要求一次写 N 章，补充：

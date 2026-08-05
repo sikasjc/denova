@@ -1,7 +1,7 @@
 import { FileText, PenLine, SearchCheck, Settings2, Sparkles, WandSparkles, type LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ChapterSummary } from '@/lib/api'
-import type { WritingQuickActionSettings } from '@/features/settings/types'
+import type { WritingIntent, WritingQuickActionSettings } from '@/features/settings/types'
 import { resolveWritingQuickActionItems, writingQuickActionTarget } from '@/features/writing-quick-actions/quick-actions'
 
 const ACTION_ICONS: Record<string, LucideIcon> = {
@@ -23,7 +23,7 @@ export function AgentQuickActions({
   actions: WritingQuickActionSettings[]
   chapter?: ChapterSummary
   selectedFile: string | null
-  onPrefill: (message: string) => void
+  onPrefill: (message: string, intent?: WritingIntent) => void
   onOpenSettings: () => void
 }) {
   const { t } = useTranslation()
@@ -54,7 +54,7 @@ export function AgentQuickActions({
                 key={action.id}
                 type="button"
                 className="nova-nav-item flex min-w-0 items-center gap-2 border border-[var(--nova-border)] bg-[var(--nova-surface)] px-3 py-2 text-left text-xs"
-                onClick={() => onPrefill(action.prompt)}
+                onClick={() => onPrefill(action.prompt, action.intent)}
                 disabled={!action.prompt.trim()}
                 title={action.label}
               >

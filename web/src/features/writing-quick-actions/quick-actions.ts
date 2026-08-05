@@ -1,15 +1,15 @@
 import type { TFunction } from 'i18next'
-import type { WritingQuickActionSettings } from '@/features/settings/types'
+import type { WritingIntent, WritingQuickActionSettings } from '@/features/settings/types'
 
 const TARGET_PLACEHOLDER = '{target}'
 
-const DEFAULT_ACTIONS = [
-  { id: 'next-group', promptKey: 'chat.quick.prompt.nextGroup' },
-  { id: 'write-next-chapter', promptKey: 'chat.quick.prompt.writeNextChapter' },
-  { id: 'continue-paragraph', promptKey: 'chat.quick.prompt.continueParagraph' },
-  { id: 'polish-chapter', promptKey: 'chat.quick.prompt.polishChapter' },
-  { id: 'sync-state', promptKey: 'chat.quick.prompt.finalizeState' },
-  { id: 'consistency-check', promptKey: 'chat.quick.prompt.consistencyCheck' },
+const DEFAULT_ACTIONS: Array<{ id: string; promptKey: string; intent: WritingIntent }> = [
+  { id: 'next-group', promptKey: 'chat.quick.prompt.nextGroup', intent: 'planning' },
+  { id: 'write-next-chapter', promptKey: 'chat.quick.prompt.writeNextChapter', intent: 'prose_generation' },
+  { id: 'continue-paragraph', promptKey: 'chat.quick.prompt.continueParagraph', intent: 'prose_generation' },
+  { id: 'polish-chapter', promptKey: 'chat.quick.prompt.polishChapter', intent: 'prose_revision' },
+  { id: 'sync-state', promptKey: 'chat.quick.prompt.finalizeState', intent: 'analysis' },
+  { id: 'consistency-check', promptKey: 'chat.quick.prompt.consistencyCheck', intent: 'analysis' },
 ]
 
 const DEFAULT_LABEL_KEYS: Record<string, string> = {
@@ -54,5 +54,6 @@ export function defaultWritingQuickActions(t: TFunction): WritingQuickActionSett
   return DEFAULT_ACTIONS.map((action) => ({
     id: action.id,
     prompt: t(action.promptKey),
+    intent: action.intent,
   }))
 }

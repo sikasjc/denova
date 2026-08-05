@@ -58,26 +58,14 @@ func TestSubAgentsReadWriteMergeSanitize(t *testing.T) {
 	}
 }
 
-func TestConfigTemplatePreseedsWritingSubAgentsAsEditableConfig(t *testing.T) {
+func TestConfigTemplatePreseedsEditableWritingPipelineOnly(t *testing.T) {
 	settings, err := ReadSettingsFile(filepath.Join("..", "config.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The template preseeds the IDE-only writing pipeline plus cross-mode
-	// choreography SubAgents shared by Writing and Interactive modes.
-	writingOnly := []string{"context-planner", "writer", "reviewer", "fixer", "final-gate", "memory-patcher"}
-	crossMode := []string{"choreographer", "intimacy-choreographer"}
-	want := append(append([]string{}, writingOnly...), crossMode...)
+	want := []string{"context-planner", "writer", "reviewer", "fixer", "final-gate", "memory-patcher"}
 	if got := subAgentIDs(settings.SubAgents); !reflect.DeepEqual(got, want) {
-		t.Fatalf("template subagents = %#v, want %#v", got, want)
-	}
-	ideOnly := map[string]bool{}
-	for _, id := range writingOnly {
-		ideOnly[id] = true
-	}
-	crossModeSet := map[string]bool{}
-	for _, id := range crossMode {
-		crossModeSet[id] = true
+		t.Fatalf("template writing subagents = %#v, want %#v", got, want)
 	}
 	for _, sub := range settings.SubAgents {
 		if !SubAgentEnabled(sub) {
@@ -86,18 +74,38 @@ func TestConfigTemplatePreseedsWritingSubAgentsAsEditableConfig(t *testing.T) {
 		if sub.SystemPrompt == "" || containsASCIIOnly(sub.SystemPrompt) {
 			t.Fatalf("template subagent prompt should be Chinese and non-empty: %#v", sub)
 		}
-		switch {
-		case ideOnly[sub.ID]:
-			if len(sub.Parents) != 1 || sub.Parents[0] != AgentKindIDE {
-				t.Fatalf("writing subagent should only belong to IDE: %#v", sub)
-			}
-		case crossModeSet[sub.ID]:
-			if !SubAgentAllowedForParent(sub, AgentKindIDE) || !SubAgentAllowedForParent(sub, AgentKindInteractiveStory) {
-				t.Fatalf("choreography subagent should be shared by IDE and Interactive modes: %#v", sub)
-			}
-		default:
-			t.Fatalf("unexpected template subagent: %#v", sub)
+		if len(sub.Parents) != 1 || sub.Parents[0] != AgentKindIDE {
+			t.Fatalf("writing subagent should only belong to IDE: %#v", sub)
 		}
+	}
+}
+
+func TestBuiltInChoreographySubAgentsAreCrossModeReadOnlyAndOverridable(t *testing.T) {
+	defaults := DefaultSettings().SubAgents
+	if got := subAgentIDs(defaults); !reflect.DeepEqual(got, []string{"choreographer", "intimacy-choreographer"}) {
+		t.Fatalf("built-in choreography subagents = %#v", got)
+	}
+	for _, sub := range defaults {
+		if !SubAgentAllowedForParent(sub, AgentKindIDE) || !SubAgentAllowedForParent(sub, AgentKindInteractiveStory) {
+			t.Fatalf("choreography subagent should be shared across writing and game: %#v", sub)
+		}
+		parent := ResolveAgentTools(&Config{}, AgentKindIDE)
+		tools := ResolveSubAgentTools(parent, sub.Tools)
+		if !tools.Skills || !tools.FileRead || tools.FileWrite || tools.LoreWrite || tools.ShellExecute || tools.WebSearch {
+			t.Fatalf("choreography subagent tools are not read-only: %#v", tools)
+		}
+	}
+
+	off := false
+	merged := MergeSubAgents(defaults, []SubAgentConfig{{
+		ID:           "choreographer",
+		Description:  "custom description",
+		SystemPrompt: "custom prompt",
+		Enabled:      &off,
+		Parents:      []string{AgentKindIDE, AgentKindInteractiveStory},
+	}})
+	if SubAgentEnabled(merged[0]) {
+		t.Fatalf("user override should disable built-in choreography subagent: %#v", merged[0])
 	}
 }
 
@@ -150,7 +158,7 @@ func TestLoadLayeredWithStartupConfigKeepsGlobalSubAgents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"context-planner", "writer", "reviewer", "fixer", "final-gate", "memory-patcher", "subagent-1"}
+	want := []string{"choreographer", "intimacy-choreographer", "context-planner", "writer", "reviewer", "fixer", "final-gate", "memory-patcher", "subagent-1"}
 	if got := subAgentIDs(layered.Effective.SubAgents); !reflect.DeepEqual(got, want) {
 		t.Fatalf("effective subagents = %#v, want %#v", got, want)
 	}

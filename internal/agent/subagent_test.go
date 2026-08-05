@@ -81,6 +81,78 @@ func TestBuildDeepAgentPassesGeneralAndConfiguredSubAgents(t *testing.T) {
 	}
 }
 
+func TestBuildDeepAgentIncludesBuiltInChoreographySubAgents(t *testing.T) {
+	off := false
+	var captured *deep.Config
+	previous := newDeepAgent
+	newDeepAgent = func(_ context.Context, cfg *deep.Config) (adk.ResumableAgent, error) {
+		copied := *cfg
+		captured = &copied
+		return fakeAgent{name: cfg.Name, description: cfg.Description}, nil
+	}
+	t.Cleanup(func() { newDeepAgent = previous })
+
+	defaults := config.DefaultSettings()
+	_, err := buildDeepAgent(context.Background(), &config.Config{
+		OpenAIBaseURL: "https://example.invalid",
+		OpenAIModel:   "test-model",
+		AgentTools: config.AgentToolSettings{
+			Default: config.AgentToolOverride{
+				FileRead:     &off,
+				FileWrite:    &off,
+				ShellExecute: &off,
+				Skills:       &off,
+				LoreRead:     &off,
+				LoreWrite:    &off,
+				Todo:         &off,
+				WebSearch:    &off,
+			},
+		},
+		SubAgents: defaults.SubAgents,
+	}, deepAgentSpec{
+		Kind:        config.AgentKindIDE,
+		Name:        "DenovaAgent",
+		Description: "test",
+		Instruction: "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if captured == nil || len(captured.SubAgents) != 2 {
+		t.Fatalf("expected built-in choreography subagents, got %#v", captured)
+	}
+	got := []string{
+		captured.SubAgents[0].Name(context.Background()),
+		captured.SubAgents[1].Name(context.Background()),
+	}
+	if strings.Join(got, ",") != "choreographer,intimacy-choreographer" {
+		t.Fatalf("unexpected built-in choreography subagents: %#v", got)
+	}
+}
+
+func TestAvailableSubAgentIDsRespectParentAndEnabledState(t *testing.T) {
+	off := false
+	available := availableSubAgentIDs(&config.Config{SubAgents: []config.SubAgentConfig{
+		{
+			ID:           "choreographer",
+			Description:  "action",
+			SystemPrompt: "route action",
+			Parents:      []string{config.AgentKindIDE, config.AgentKindInteractiveStory},
+		},
+		{
+			ID:           "intimacy-choreographer",
+			Description:  "intimacy",
+			SystemPrompt: "route intimacy",
+			Enabled:      &off,
+			Parents:      []string{config.AgentKindIDE},
+		},
+	}}, config.AgentKindIDE)
+
+	if !available["choreographer"] || available["intimacy-choreographer"] {
+		t.Fatalf("available delegates = %#v", available)
+	}
+}
+
 func TestBuildSubAgentInstructionInheritsParentSystemPrompt(t *testing.T) {
 	parentInstruction := "# Denova 运行时契约（不可覆盖）\n\n作品根目录：/tmp/book\n父级工具权限边界。"
 	instruction := buildSubAgentInstruction(deepAgentSpec{

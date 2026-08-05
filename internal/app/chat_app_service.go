@@ -278,7 +278,7 @@ func (s *ChatAppService) StartTaskWithError(ctx context.Context, req agent.ChatR
 	a.mu.Unlock()
 
 	task := NewTask(func(ctx context.Context, task *Task, emit func(agent.Event)) {
-		log.Printf("[agent-task] run begin id=%s message_len=%d references=%d lore_references=%d style_scenes=%d style_rules=%d selections=%d plan_mode=%v teller_id=%s writing_skill=%s", task.ID(), len(req.Message), len(req.References), len(req.LoreReferences), len(req.StyleScenes), len(req.StyleRules), len(req.Selections), req.PlanMode, req.TellerID, req.WritingSkill)
+		log.Printf("[agent-task] run begin id=%s message_len=%d references=%d lore_references=%d style_scenes=%d style_rules=%d selections=%d plan_mode=%v teller_id=%s writing_skill=%s writing_intent=%s", task.ID(), len(req.Message), len(req.References), len(req.LoreReferences), len(req.StyleScenes), len(req.StyleRules), len(req.Selections), req.PlanMode, req.TellerID, req.WritingSkill, req.WritingIntent)
 		runtimeContexts := agent.IDEWorkspaceRuntimeContextsForRequest(runtime.state, req)
 		conversation := agent.NewSessionConversationForAgentWithRuntimeContexts(
 			runtime.sess,
@@ -508,10 +508,11 @@ func applyWritingSkillRuntimePolicy(ctx context.Context, runtime *ideChatRuntime
 		return nil
 	}
 	req.WritingSkill = agent.ResolveWritingSkillName(&runtime.cfg, req.WritingSkill)
+	req.WritingIntent = config.NormalizeWritingIntent(req.WritingIntent)
 	req.LoadedWritingSkill = nil
 	if !agent.ShouldInlineWritingSkill(*req) {
-		log.Printf("[agent-task] selected writing skill name=%s delivery=dynamic reason=non_writing_or_ambiguous workspace=%s",
-			req.WritingSkill, runtime.workspace)
+		log.Printf("[agent-task] selected writing skill name=%s writing_intent=%s delivery=dynamic reason=non_writing_or_ambiguous workspace=%s",
+			req.WritingSkill, req.WritingIntent, runtime.workspace)
 		return nil
 	}
 	backend := novaskills.NewAgentBackend(
@@ -520,7 +521,7 @@ func applyWritingSkillRuntimePolicy(ctx context.Context, runtime *ideChatRuntime
 		config.ResolveAgentSkillOverrides(&runtime.cfg, config.AgentKindIDE),
 	)
 	resolved, err := backend.Resolve(ctx, req.WritingSkill)
-	if err == nil && resolved.Scope == novaskills.ScopeBuiltin && agent.IsBuiltinWritingPreset(req.WritingSkill) {
+	if err == nil && resolved.Scope == novaskills.ScopeBuiltin && agent.IsBuiltinWritingPreset(req.WritingSkill) && agent.InlineWritingSkillContentAllowed(resolved.Content) {
 		req.LoadedWritingSkill = &agent.LoadedWritingSkill{
 			Name:          resolved.Name,
 			Description:   resolved.Description,
@@ -531,8 +532,8 @@ func applyWritingSkillRuntimePolicy(ctx context.Context, runtime *ideChatRuntime
 			disableRequestSkill(&runtime.cfg, preset)
 		}
 		disableBuiltinRequestSkills(ctx, backend, &runtime.cfg, "continue", "rewrite")
-		log.Printf("[agent-task] selected writing skill name=%s source=builtin delivery=inline chars=%d workspace=%s",
-			req.WritingSkill, len([]rune(resolved.Content)), runtime.workspace)
+		log.Printf("[agent-task] selected writing skill name=%s writing_intent=%s source=builtin delivery=inline chars=%d workspace=%s",
+			req.WritingSkill, req.WritingIntent, len([]rune(resolved.Content)), runtime.workspace)
 		return nil
 	}
 	if err != nil {
@@ -540,8 +541,12 @@ func applyWritingSkillRuntimePolicy(ctx context.Context, runtime *ideChatRuntime
 			req.WritingSkill, runtime.workspace, err)
 		return nil
 	}
-	log.Printf("[agent-task] selected writing skill name=%s source=%s delivery=dynamic workspace=%s",
-		req.WritingSkill, resolved.Scope, runtime.workspace)
+	reason := "custom_or_non_builtin"
+	if resolved.Scope == novaskills.ScopeBuiltin && agent.IsBuiltinWritingPreset(req.WritingSkill) && !agent.InlineWritingSkillContentAllowed(resolved.Content) {
+		reason = "inline_content_limit"
+	}
+	log.Printf("[agent-task] selected writing skill name=%s writing_intent=%s source=%s delivery=dynamic reason=%s workspace=%s",
+		req.WritingSkill, req.WritingIntent, resolved.Scope, reason, runtime.workspace)
 	return nil
 }
 

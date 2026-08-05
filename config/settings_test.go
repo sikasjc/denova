@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -112,8 +113,8 @@ func TestDefaultSettingsValues(t *testing.T) {
 	if s.WritingQuickActions != nil {
 		t.Fatalf("WritingQuickActions should fall back to frontend defaults until customized: %#v", s.WritingQuickActions)
 	}
-	if len(s.SubAgents) != 0 {
-		t.Fatalf("SubAgents should come from editable config layers, not Go defaults: %#v", s.SubAgents)
+	if got := subAgentIDs(s.SubAgents); !reflect.DeepEqual(got, []string{"choreographer", "intimacy-choreographer"}) {
+		t.Fatalf("built-in choreography SubAgents missing from defaults: %#v", got)
 	}
 	if s.GeneralSubAgents.Default == nil || *s.GeneralSubAgents.Default {
 		t.Fatalf("GeneralSubAgents default fallback should be disabled")
@@ -326,8 +327,8 @@ func TestWriteSettingsFileSanitizesWritingQuickActions(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	actions := []WritingQuickAction{
-		{ID: " review ", Label: " 检查 ", Prompt: " 检查 {target} "},
-		{ID: "review", Label: "复查", Prompt: "再次检查"},
+		{ID: " review ", Label: " 检查 ", Prompt: " 检查 {target} ", Intent: WritingIntentProseRevision},
+		{ID: "review", Label: "复查", Prompt: "再次检查", Intent: "invalid"},
 	}
 	if err := WriteSettingsFile(path, Settings{WritingQuickActions: &actions}); err != nil {
 		t.Fatal(err)
@@ -340,11 +341,14 @@ func TestWriteSettingsFileSanitizesWritingQuickActions(t *testing.T) {
 		t.Fatalf("quick actions should round trip: %#v", out.WritingQuickActions)
 	}
 	got := *out.WritingQuickActions
-	if got[0].ID != "review" || got[0].Label != "检查" || got[0].Prompt != "检查 {target}" {
+	if got[0].ID != "review" || got[0].Label != "检查" || got[0].Prompt != "检查 {target}" || got[0].Intent != WritingIntentProseRevision {
 		t.Fatalf("quick action should be trimmed: %#v", got[0])
 	}
 	if got[1].ID != "review-2" {
 		t.Fatalf("duplicate quick action id should be made unique: %#v", got[1])
+	}
+	if got[1].Intent != WritingIntentAuto {
+		t.Fatalf("invalid Writing intent should be cleared: %#v", got[1])
 	}
 }
 

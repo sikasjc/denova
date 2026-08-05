@@ -25,7 +25,10 @@ describe('Writing quick actions', () => {
     const defaults = resolveWritingQuickActions(undefined, t)
 
     expect(defaults).toHaveLength(6)
-    expect(defaults[0]).toEqual({ id: 'next-group', prompt: 'Plan the next group.' })
+    expect(defaults[0]).toEqual({ id: 'next-group', prompt: 'Plan the next group.', intent: 'planning' })
+    expect(defaults[1].intent).toBe('prose_generation')
+    expect(defaults[3].intent).toBe('prose_revision')
+    expect(defaults[5].intent).toBe('analysis')
     expect(writingQuickActionLabel(defaults[0], t)).toBe('Next Group Outline')
     expect(resolveWritingQuickActions([], t)).toEqual([])
   })

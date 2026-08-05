@@ -6,6 +6,8 @@ import (
 	"denova/config"
 )
 
+const maxInlineWritingSkillRunes = 128 * 1024
+
 var builtinWritingPresets = map[string]bool{
 	"novel-lite":     true,
 	"novel-standard": true,
@@ -28,6 +30,12 @@ func ShouldInlineWritingSkill(req ChatRequest) bool {
 	if len(req.ReviewFeedback) > 0 || !req.ResolvedReviewFeedback.Empty() {
 		return true
 	}
+	switch config.NormalizeWritingIntent(req.WritingIntent) {
+	case config.WritingIntentProseGeneration, config.WritingIntentProseRevision, config.WritingIntentReviewApplication:
+		return true
+	case config.WritingIntentPlanning, config.WritingIntentAnalysis:
+		return false
+	}
 	message := strings.ToLower(strings.TrimSpace(req.Message))
 	if message == "" {
 		return false
@@ -48,6 +56,11 @@ func ShouldInlineWritingSkill(req ChatRequest) bool {
 		}
 	}
 	return false
+}
+
+func InlineWritingSkillContentAllowed(content string) bool {
+	size := len([]rune(strings.TrimSpace(content)))
+	return size > 0 && size <= maxInlineWritingSkillRunes
 }
 
 // ResolveWritingSkillName selects the effective Writing Skill name for this IDE

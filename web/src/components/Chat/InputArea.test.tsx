@@ -5,6 +5,32 @@ import { describe, expect, it, vi } from 'vitest'
 import { InputArea } from './InputArea'
 
 describe('InputArea command menu', () => {
+  it('shows the current Writing intent and lets the user change it before sending', async () => {
+    const user = userEvent.setup()
+    const handleSend = vi.fn()
+    render(
+      <InputArea
+        onSend={handleSend}
+        disabled={false}
+        showWritingIntentControl
+        inputPrefill={{ prompt: 'draft chapter', nonce: 1, writingIntent: 'prose_generation' }}
+      />,
+    )
+
+    expect(await screen.findByRole('combobox', { name: '写作任务类型' })).toHaveTextContent('正文创作')
+    await user.click(screen.getByRole('combobox', { name: '写作任务类型' }))
+    await user.click(screen.getByRole('option', { name: '正文修订' }))
+    await user.click(screen.getByRole('button', { name: '发送' }))
+
+    expect(handleSend).toHaveBeenCalledWith('draft chapter', 'prose_revision')
+  })
+
+  it('keeps Writing intent controls out of non-Writing composers', () => {
+    render(<InputArea onSend={vi.fn()} disabled={false} />)
+
+    expect(screen.queryByRole('combobox', { name: '写作任务类型' })).not.toBeInTheDocument()
+  })
+
   it('shows enabled built-in commands before Skills when typing slash', async () => {
     const user = userEvent.setup()
     render(
@@ -149,7 +175,7 @@ describe('InputArea command menu', () => {
     expect(handleOpen).toHaveBeenCalledWith(feedback, feedback.comments[0])
 
     await user.click(screen.getByRole('button', { name: '发送' }))
-    expect(handleSend).toHaveBeenCalledWith('')
+    expect(handleSend).toHaveBeenCalledWith('', 'review_application')
 
     await user.click(screen.getByRole('button', { name: '移出本次提交' }))
     expect(handleRemove).toHaveBeenCalledWith(expect.objectContaining({ reviewThreadId: 'review-1' }), 'comment-1')
@@ -198,6 +224,43 @@ describe('InputArea command menu', () => {
 })
 
 describe('InputArea prefill clearing', () => {
+  it('keeps a structured Writing intent while the user edits a prefilled prompt', async () => {
+    const user = userEvent.setup()
+    const handleSend = vi.fn()
+    render(
+      <InputArea
+        onSend={handleSend}
+        disabled={false}
+        inputPrefill={{ prompt: 'draft chapter', nonce: 1, writingIntent: 'prose_generation' }}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveTextContent('draft chapter'))
+    await user.type(screen.getByRole('textbox'), ' Z')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+
+    expect(handleSend).toHaveBeenCalledWith(expect.stringContaining('Z'), 'prose_generation')
+  })
+
+  it('restores a structured Writing intent when a submission is rejected', async () => {
+    const user = userEvent.setup()
+    const handleSend = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    render(
+      <InputArea
+        onSend={handleSend}
+        disabled={false}
+        inputPrefill={{ prompt: 'revise chapter', nonce: 1, writingIntent: 'prose_revision' }}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(screen.getByRole('textbox')).toHaveTextContent('revise chapter'))
+    await user.click(screen.getByRole('button', { name: '发送' }))
+
+    expect(handleSend).toHaveBeenNthCalledWith(1, 'revise chapter', 'prose_revision')
+    expect(handleSend).toHaveBeenNthCalledWith(2, 'revise chapter', 'prose_revision')
+  })
+
   it('clears prefilled prompt after sending without disabled transition', async () => {
     const user = userEvent.setup()
     const sentMessages: string[] = []

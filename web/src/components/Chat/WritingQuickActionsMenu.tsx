@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import type { WritingQuickActionSettings } from '@/features/settings/types'
+import type { WritingIntent, WritingQuickActionSettings } from '@/features/settings/types'
 import { resolveWritingQuickActionItems, writingQuickActionTarget } from '@/features/writing-quick-actions/quick-actions'
 
 export function WritingQuickActionsMenu({
@@ -23,7 +23,7 @@ export function WritingQuickActionsMenu({
   chapterTitle?: string
   selectedFile: string | null
   disabled: boolean
-  onPrefill: (prompt: string) => void
+  onPrefill: (prompt: string, intent?: WritingIntent) => void
   onOpenSettings: () => void
 }) {
   const { t } = useTranslation()
@@ -58,7 +58,7 @@ export function WritingQuickActionsMenu({
           <DropdownMenuItem
             key={action.id}
             disabled={!action.prompt.trim()}
-            onSelect={() => onPrefill(action.prompt)}
+            onSelect={() => onPrefill(action.prompt, action.intent)}
             className="cursor-pointer text-xs focus:bg-[var(--nova-active)] focus:text-[var(--nova-text)]"
           >
             <Sparkles className="h-3.5 w-3.5 text-[var(--nova-text-faint)]" />

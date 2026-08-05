@@ -17,7 +17,7 @@ agent: ide
 ## 执行
 
 - 默认流程：`主 Agent 初稿 -> reviewer 审稿 -> 主 Agent Patch 修订 -> 状态同步 -> 最终输出`。
-- 只使用主 Agent 和 `reviewer`；不要启动 writer、fixer 或其他写作 subagent。
+- 默认只使用主 Agent 和 `reviewer`；不要启动 writer、fixer 或其他写作 subagent。只有下述“按需编排”条件成立时，才允许在初稿前额外调用一次 `choreographer` 或 `intimacy-choreographer`。
 - 从用户实际指令判断范围；没有 `writing_scope` 字段。除非用户明确说“写下一章”，否则不要假设任务一定是下一章。
 - 当用户要求一次写 N 章时，先制定简洁的整体计划和分章计划。
 - 只读取必要上下文；新章节用 `write_file`，已有章节按 system prompt 用一次批量 `edit_file` 最小必要 Patch。
@@ -26,6 +26,18 @@ agent: ide
 - 主 Agent 聚合 reviewer/用户意见后再修订，不能机械逐条修改破坏整体，也不能因评论多而扩大范围。
 - 工具返回 `[tool error]`、`string not found`、参数或路径错误时不得宣称已完成；重新读取并重试。
 - 完成后读回关键片段；只有叙事事实或角色状态变化时才同步状态文件。
+
+## 按需编排
+
+仅当物理或情绪连续性复杂到会实质影响正文质量时，在初稿前调用一次对应专业 SubAgent：
+
+- 复杂战斗、追逐、多人协作、救援/攀爬、军阵、载具或灾害，需要跟踪多主体位置、资源与反应因果时，调用 `task(subagent_type=choreographer)`。
+- 复杂亲密/情色互动，需要跟踪多人或长段肢体位置、姿态、情绪回应、意愿信号与张力时，调用 `task(subagent_type=intimacy-choreographer)`。
+- description 传递用户目标、必要路径、人物/空间约束、只返回 beat sheet、禁止写入；亲密场景原样传递用户尺度，不自行升级或净化。
+- beat sheet 只作内部写作计划；除非用户要求，不在最终回复中展示。
+- 同一场景最多调用一个 choreography SubAgent 一次；若动作与亲密维度同时存在，选择对连续性风险更关键的一个，不串行调用两套编排。
+
+普通对白、静态描写、简单走位、单次拥抱/亲吻/触碰、少量明确动作或纯措辞润色不要调用 choreography。
 
 ## 审稿要求
 

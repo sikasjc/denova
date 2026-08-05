@@ -15,6 +15,7 @@ import {
   DEFAULT_SESSION_MESSAGE_PAGE_SIZE,
 } from '@/lib/api'
 import type { ContextAnalysis, IDEContext, SessionSummary, TextSelection } from '@/lib/api'
+import type { WritingIntent } from '@/features/settings/types'
 import { APIError } from '@/lib/api-client'
 import type { UserMessageReference } from '@/lib/api-client/types'
 import { fetchSettings } from '@/features/settings/api'
@@ -36,6 +37,7 @@ interface ChatOptions {
 
 export interface ChatSendOptions {
   writingSkill?: string
+  writingIntent?: WritingIntent
   ideContext?: IDEContext
   imagePresetId?: string
   tellerId?: string
@@ -345,6 +347,7 @@ export function useAgentChat(options: ChatOptions = {}) {
       ide_context: normalizeIDEContext(sendOptions.ideContext),
       plan_mode: prepared.planMode,
       writing_skill: sendOptions.writingSkill,
+      writing_intent: sendOptions.writingIntent,
       image_preset_id: sendOptions.imagePresetId,
       teller_id: sendOptions.tellerId,
       review_feedback: sendOptions.reviewFeedback?.map((feedback) => ({
@@ -390,7 +393,7 @@ export function useAgentChat(options: ChatOptions = {}) {
   const analyzeContext = useCallback(async (input: string, sendOptions: ChatSendOptions = {}): Promise<ContextAnalysis> => {
     if (isStreaming) throw new Error(t('chat.contextAnalysis.streamingUnavailable'))
     const prepared = prepareAgentRequest(input)
-    return analyzeChatContext(prepared.message, prepared.references, prepared.loreReferences, prepared.styleScenes, prepared.textSelections, prepared.planMode, sendOptions.writingSkill, sendOptions.ideContext, sendOptions.imagePresetId, sendOptions.tellerId)
+    return analyzeChatContext(prepared.message, prepared.references, prepared.loreReferences, prepared.styleScenes, prepared.textSelections, prepared.planMode, sendOptions.writingSkill, sendOptions.ideContext, sendOptions.imagePresetId, sendOptions.tellerId, sendOptions.writingIntent)
   }, [isStreaming, prepareAgentRequest, t])
 
   const submitPlanQuestion = useCallback((ref: AgentPartRef, content: string, _preview: string) => {

@@ -2,6 +2,7 @@ import type { ChatTransport, UIMessage } from 'ai'
 import { DefaultChatTransport } from 'ai'
 import { APIError, fetchAPI } from './api-client/client'
 import type { ChatMessage, UserMessageReference } from './api-client/types'
+import type { WritingIntent } from '@/features/settings/types'
 
 export interface AgentMessageMetadata {
   created_at?: string
@@ -55,6 +56,7 @@ interface AgentChatRequestBody {
   ide_context?: { current_file?: string; open_files?: string[] }
   plan_mode?: boolean
   writing_skill?: string
+  writing_intent?: WritingIntent
   image_preset_id?: string
   teller_id?: string
   review_feedback?: Array<{
@@ -125,6 +127,7 @@ export function buildAgentChatRequestBody(body: AgentChatRequestBody): AgentChat
     ide_context: body.ide_context,
     plan_mode: body.plan_mode || false,
     writing_skill: body.writing_skill || undefined,
+    writing_intent: body.writing_intent || undefined,
     image_preset_id: body.image_preset_id || undefined,
     teller_id: body.teller_id || undefined,
     review_feedback: reviewFeedback.length ? reviewFeedback : undefined,

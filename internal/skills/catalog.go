@@ -15,8 +15,9 @@ import (
 )
 
 type record struct {
-	skill   einoskill.Skill
-	summary SkillSummary
+	skill    einoskill.Skill
+	summary  SkillSummary
+	delegate string
 }
 
 func SnapshotFor(ctx context.Context, dirs []Directory) (Snapshot, error) {
@@ -147,9 +148,23 @@ func parseRecord(ctx context.Context, dir Directory, path, data string) (record,
 	if err != nil {
 		return record{}, err
 	}
-	var fm einoskill.FrontMatter
-	if err := yaml.Unmarshal([]byte(frontmatter), &fm); err != nil {
+	var parsed struct {
+		Name        string                `yaml:"name"`
+		Description string                `yaml:"description"`
+		Context     einoskill.ContextMode `yaml:"context"`
+		Agent       string                `yaml:"agent"`
+		Model       string                `yaml:"model"`
+		Delegate    string                `yaml:"delegate"`
+	}
+	if err := yaml.Unmarshal([]byte(frontmatter), &parsed); err != nil {
 		return record{}, err
+	}
+	fm := einoskill.FrontMatter{
+		Name:        parsed.Name,
+		Description: parsed.Description,
+		Context:     parsed.Context,
+		Agent:       parsed.Agent,
+		Model:       parsed.Model,
 	}
 	fm.Name = strings.TrimSpace(fm.Name)
 	fm.Description = strings.TrimSpace(fm.Description)
@@ -182,6 +197,7 @@ func parseRecord(ctx context.Context, dir Directory, path, data string) (record,
 			Editable:    dir.Writable,
 			UpdatedAt:   updatedAt,
 		},
+		delegate: strings.TrimSpace(parsed.Delegate),
 	}, nil
 }
 

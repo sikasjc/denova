@@ -17,6 +17,7 @@ import type { FileNode } from '@/hooks/useWorkspace'
 import type { BookRecord, BookSortMode, ChapterIllustration, ChapterSummary, ContextAnalysis, DocumentPreview, LoreItem, SessionSummary, TextSelection, WorkspaceSearchResult, WorkspaceSummary } from '@/lib/api'
 import type { AgentUIMessage } from '@/lib/agent-ui'
 import type { ChatSendOptions } from '@/hooks/useAgentChat'
+import type { WritingIntent } from '@/features/settings/types'
 import { usePersistedUserSettings } from '@/hooks/usePersistedUserSettings'
 import { SETTINGS_SECTION_EVENT } from '@/features/onboarding/events'
 import type { AgentPartRef } from '@/lib/agent-message-view'
@@ -122,7 +123,7 @@ interface ModeRouterProps {
   onDeleteChatSession: (id: string) => void | Promise<void>
   onLoadEarlierHistory: () => void | Promise<void>
   onSend: (message: string, options?: ChatSendOptions) => boolean | Promise<boolean>
-  onAnalyzeContext: (message: string, options?: { writingSkill?: string; ideContext?: { currentFile?: string; openFiles?: string[] }; imagePresetId?: string; tellerId?: string }) => Promise<ContextAnalysis>
+  onAnalyzeContext: (message: string, options?: { writingSkill?: string; writingIntent?: WritingIntent; ideContext?: { currentFile?: string; openFiles?: string[] }; imagePresetId?: string; tellerId?: string }) => Promise<ContextAnalysis>
   onStop: () => void
   onReferenceRemove: (path: string) => void
   onLoreReferenceAdd: (id: string) => void

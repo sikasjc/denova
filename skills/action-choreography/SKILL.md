@@ -2,6 +2,7 @@
 name: action-choreography
 description: 把多主体在同一空间内的连续互动（近战/枪战/魔法/追逐/攀登/军阵/载具/灾害等）编排成结构化动作节拍表(beat sheet)。当用户要求编排动作、战斗节奏、协作步骤、灾难演变，或检查动作连续性时使用；即使没说“节拍表”，只要重点是“谁先动、如何反应、距离/资源/状态如何变化”也适用。
 agent: ide,interactive_story,choreographer
+delegate: choreographer
 ---
 
 # action-choreography（多主体动作编排）

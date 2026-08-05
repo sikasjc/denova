@@ -6,6 +6,7 @@ import { FileReferencePicker, type ReferencePickerItem } from './FileReferencePi
 import { TokenUsageDialog, type TokenUsageRecord } from './TokenUsagePanel'
 import type { TextSelection } from '@/lib/api'
 import type { VisibleAgentKey } from '@/features/agents/agent-registry'
+import type { WritingIntent } from '@/features/settings/types'
 import { Button } from '@/components/ui/button'
 import { AgentComposerShell } from './AgentComposerShell'
 import { ModelProfileSwitcher } from './ModelProfileSwitcher'
@@ -26,6 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useKeyboardInset } from '@/hooks/useKeyboardInset'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { ReviewFeedbackTray, reviewFeedbackCommentCount, type ReviewFeedbackBatch, type ReviewFeedbackComment, type ReviewFeedbackSelection } from '@/features/changes/agent/ReviewFeedbackTray'
@@ -59,16 +61,16 @@ type CommandOption = {
 type CommandScope = 'all' | 'skills' | 'none'
 type BuiltinCommand = typeof COMMANDS[number]['cmd']
 const MAX_TOKEN_USAGE_MENU_COUNT = 10
-const inputDrafts = new Map<string, string>()
+const inputDrafts = new Map<string, { value: string; writingIntent?: WritingIntent }>()
 
 interface InputAreaProps {
-  onSend: (message: string) => boolean | void | Promise<boolean | void>
+  onSend: (message: string, writingIntent?: WritingIntent) => boolean | void | Promise<boolean | void>
   onStop?: () => void
   disabled: boolean
   planMode?: boolean
   onTogglePlanMode?: () => void
   draftKey?: string
-  inputPrefill?: { prompt: string; nonce: number } | null
+  inputPrefill?: { prompt: string; nonce: number; writingIntent?: WritingIntent } | null
   onInputPrefillConsumed?: () => void
   referencedFiles?: string[]
   onReferenceRemove?: (path: string) => void
@@ -93,12 +95,13 @@ interface InputAreaProps {
   builtinCommands?: BuiltinCommand[]
   placeholder?: string
   disabledPlaceholder?: string
-  onContextAnalyze?: (message: string) => void | Promise<void>
+  onContextAnalyze?: (message: string, writingIntent?: WritingIntent) => void | Promise<void>
   tokenUsageMessages?: TokenUsageRecord[]
   onOpenTrace?: (runID: string) => void
   agentKey?: VisibleAgentKey
   workspace?: string
   quickActionsControl?: ReactNode
+  showWritingIntentControl?: boolean
   writingSkillControl?: ReactNode
   onboardingAnchor?: string
   floating?: boolean
@@ -144,6 +147,7 @@ export function InputArea({
   agentKey,
   workspace,
   quickActionsControl,
+  showWritingIntentControl = false,
   writingSkillControl,
   onboardingAnchor,
   floating = false,
@@ -152,7 +156,8 @@ export function InputArea({
   const { t } = useTranslation()
   const keyboardInset = useKeyboardInset()
   const isMobile = useIsMobile()
-  const [value, setValue] = useState(() => draftKey ? inputDrafts.get(draftKey) || '' : '')
+  const initialDraft = draftKey ? inputDrafts.get(draftKey) : undefined
+  const [value, setValue] = useState(() => initialDraft?.value || '')
   const [tokenUsageOpen, setTokenUsageOpen] = useState(false)
   const [showCommands, setShowCommands] = useState(false)
   const [commandQuery, setCommandQuery] = useState<string | null>(null)
@@ -160,6 +165,7 @@ export function InputArea({
   const [referenceQuery, setReferenceQuery] = useState<string | null>(null)
   const [styleSceneQuery, setStyleSceneQuery] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [writingIntent, setWritingIntent] = useState<WritingIntent | undefined>(initialDraft?.writingIntent)
   const inputRef = useRef<ComposerTokenInputHandle>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const submittingRef = useRef(false)
@@ -211,6 +217,7 @@ export function InputArea({
     .map((command, index) => ({ command, index }))
     .filter(({ command }) => command.source === 'skill'), [filteredCommands])
   const hasReviewFeedback = Boolean(reviewFeedback && reviewFeedbackCommentCount(reviewFeedback) > 0)
+  const effectiveWritingIntent: WritingIntent | undefined = hasReviewFeedback ? 'review_application' : writingIntent
   const hasReferences = textSelections.length > 0 || hasReviewFeedback
   const knownFileTokens = useMemo(() => Array.from(new Set([...fileSuggestions, ...referencedFiles])), [fileSuggestions, referencedFiles])
   const knownLoreTokens = useMemo(() => {
@@ -231,7 +238,9 @@ export function InputArea({
 
   useEffect(() => {
     if (!draftKey) return
-    setValue(inputDrafts.get(draftKey) || '')
+    const draft = inputDrafts.get(draftKey)
+    setValue(draft?.value || '')
+    setWritingIntent(draft?.writingIntent)
     setShowCommands(false)
     setCommandQuery(null)
     setActiveCommandIndex(0)
@@ -241,9 +250,9 @@ export function InputArea({
 
   useEffect(() => {
     if (!draftKey) return
-    if (value) inputDrafts.set(draftKey, value)
+    if (value) inputDrafts.set(draftKey, { value, writingIntent })
     else inputDrafts.delete(draftKey)
-  }, [draftKey, value])
+  }, [draftKey, value, writingIntent])
 
   useEffect(() => {
     if (activeCommandIndex >= filteredCommands.length) setActiveCommandIndex(0)
@@ -257,6 +266,7 @@ export function InputArea({
   useEffect(() => {
     if (!inputPrefill) return
     setValue(inputPrefill.prompt)
+    setWritingIntent(inputPrefill.writingIntent)
     setShowCommands(false)
     setCommandQuery(null)
     setActiveCommandIndex(0)
@@ -396,17 +406,19 @@ export function InputArea({
     const trimmed = value.trim()
     if ((!trimmed && !hasReviewFeedback) || disabled || submittingRef.current) return
     const submittedValue = value
+    const submittedIntent = effectiveWritingIntent
     submittingRef.current = true
     setSubmitting(true)
     let result: ReturnType<typeof onSend>
     try {
-      result = onSend(trimmed)
+      result = submittedIntent ? onSend(trimmed, submittedIntent) : onSend(trimmed)
     } catch {
       submittingRef.current = false
       setSubmitting(false)
       return
     }
     setValue('')
+    setWritingIntent(undefined)
     setShowCommands(false)
     setCommandQuery(null)
     setActiveCommandIndex(0)
@@ -414,15 +426,20 @@ export function InputArea({
     setStyleSceneQuery(null)
     if (result && typeof (result as PromiseLike<boolean | void>).then === 'function') {
       void Promise.resolve(result).then((accepted) => {
-        if (accepted === false) setValue((current) => current || submittedValue)
+        if (accepted === false) {
+          setValue((current) => current || submittedValue)
+          setWritingIntent(submittedIntent)
+        }
       }).catch(() => {
         setValue((current) => current || submittedValue)
+        setWritingIntent(submittedIntent)
       }).finally(() => {
         submittingRef.current = false
         setSubmitting(false)
       })
     } else if (result === false) {
       setValue(submittedValue)
+      setWritingIntent(submittedIntent)
       submittingRef.current = false
       setSubmitting(false)
     } else {
@@ -433,7 +450,7 @@ export function InputArea({
 
   const handleContextAnalyze = () => {
     if (disabled) return
-    void onContextAnalyze?.(value)
+    void onContextAnalyze?.(value, effectiveWritingIntent)
   }
   /** 选择命令 */
   const selectCommand = (cmd: string) => {
@@ -611,6 +628,32 @@ export function InputArea({
         toolbarStart={
           <>
             {quickActionsControl}
+            {showWritingIntentControl ? (
+              <Select
+                value={effectiveWritingIntent ?? '__auto__'}
+                disabled={disabled || hasReviewFeedback}
+                onValueChange={(value) => setWritingIntent(value === '__auto__' ? undefined : value as WritingIntent)}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="nova-agent-composer-intent h-8 min-w-0 max-w-[min(9rem,32vw)] border-[var(--nova-border)] bg-[var(--nova-surface)] px-2 text-xs text-[var(--nova-text-muted)] shadow-none"
+                  aria-label={t('chat.writingIntent.label')}
+                  title={hasReviewFeedback ? t('chat.writingIntent.reviewLocked') : t('chat.writingIntent.description')}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="nova-panel border text-[var(--nova-text)]">
+                  <SelectGroup>
+                    <SelectItem value="__auto__">{t('chat.writingIntent.auto')}</SelectItem>
+                    <SelectItem value="planning">{t('chat.writingIntent.planning')}</SelectItem>
+                    <SelectItem value="prose_generation">{t('chat.writingIntent.proseGeneration')}</SelectItem>
+                    <SelectItem value="prose_revision">{t('chat.writingIntent.proseRevision')}</SelectItem>
+                    <SelectItem value="review_application">{t('chat.writingIntent.reviewApplication')}</SelectItem>
+                    <SelectItem value="analysis">{t('chat.writingIntent.analysis')}</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button

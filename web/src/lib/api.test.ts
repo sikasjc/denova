@@ -188,6 +188,7 @@ describe('api', () => {
       { currentFile: 'chapters/ch02.md', openFiles: ['chapters/ch01.md', 'chapters/ch02.md'] },
       'game-cg',
       'slow-burn',
+      'prose_generation',
     )
     const reader = stream.getReader()
 
@@ -217,6 +218,7 @@ describe('api', () => {
       },
       plan_mode: true,
       writing_skill: 'novel-heavy',
+      writing_intent: 'prose_generation',
       image_preset_id: 'game-cg',
       teller_id: 'slow-burn',
     })

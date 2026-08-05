@@ -310,7 +310,7 @@ func newSkillMiddleware(ctx context.Context, cfg *config.Config, agentKind strin
 		novaskills.NewDirectories(cfg.SkillsDir, cfg.DataDir(), cfg.Workspace),
 		agentKind,
 		config.ResolveAgentSkillOverrides(cfg, agentKind),
-	)
+	).WithDelegates(availableSubAgentIDs(cfg, agentKind))
 	availableSkills, listErr := skillBackend.List(ctx)
 	if listErr != nil {
 		log.Printf("[agent] 加载 Skills 列表失败 agent=%s err=%v", agentKind, listErr)
@@ -325,6 +325,19 @@ func newSkillMiddleware(ctx context.Context, cfg *config.Config, agentKind strin
 		return nil, nil
 	}
 	return skillMw, nil
+}
+
+func availableSubAgentIDs(cfg *config.Config, parentKind string) map[string]bool {
+	if cfg == nil {
+		return nil
+	}
+	available := map[string]bool{}
+	for _, sub := range config.SanitizeSubAgents(cfg.SubAgents) {
+		if config.SubAgentAllowedForParent(sub, parentKind) {
+			available[sub.ID] = true
+		}
+	}
+	return available
 }
 
 func buildConfiguredSubAgents(ctx context.Context, cfg *config.Config, parent deepAgentSpec, parentTools config.ResolvedAgentToolSettings) ([]adk.Agent, error) {

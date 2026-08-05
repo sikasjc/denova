@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"denova/config"
@@ -72,6 +73,48 @@ func TestApplyWritingSkillRuntimePolicyInlinesActiveBuiltinPreset(t *testing.T) 
 		if enabled, ok := runtime.cfg.AgentSkills.IDE[name]; !ok || enabled {
 			t.Fatalf("expected %s hidden from request skill tool: %#v", name, runtime.cfg.AgentSkills.IDE)
 		}
+	}
+}
+
+func TestApplyWritingSkillRuntimePolicyUsesStructuredIntentForRealQuickActionPrompt(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	writeTestSkill(t, builtin, "novel-lite", "fast preset")
+	runtime := &ideChatRuntime{workspace: filepath.Join(root, "workspace"), cfg: config.Config{
+		SkillsDir:           builtin,
+		WritingSkillDefault: "novel-lite",
+	}}
+	req := &agent.ChatRequest{
+		Message:       "请读取当前章节组细纲和最近正文，完成目标章节。",
+		WritingIntent: config.WritingIntentProseGeneration,
+	}
+
+	if err := applyWritingSkillRuntimePolicy(context.Background(), runtime, req); err != nil {
+		t.Fatal(err)
+	}
+	if req.LoadedWritingSkill == nil || req.LoadedWritingSkill.Content != "fast preset" {
+		t.Fatalf("structured quick action intent should inline preset: %#v", req.LoadedWritingSkill)
+	}
+}
+
+func TestApplyWritingSkillRuntimePolicyFallsBackWhenBuiltinPresetExceedsInlineLimit(t *testing.T) {
+	root := t.TempDir()
+	builtin := filepath.Join(root, "builtin")
+	writeTestSkill(t, builtin, "novel-lite", strings.Repeat("x", 128*1024+1))
+	runtime := &ideChatRuntime{workspace: filepath.Join(root, "workspace"), cfg: config.Config{
+		SkillsDir:           builtin,
+		WritingSkillDefault: "novel-lite",
+	}}
+	req := &agent.ChatRequest{Message: "续写下一章"}
+
+	if err := applyWritingSkillRuntimePolicy(context.Background(), runtime, req); err != nil {
+		t.Fatal(err)
+	}
+	if req.LoadedWritingSkill != nil {
+		t.Fatalf("oversized preset should remain dynamic: %#v", req.LoadedWritingSkill)
+	}
+	if runtime.cfg.AgentSkills.IDE != nil {
+		t.Fatalf("dynamic fallback must keep skill available: %#v", runtime.cfg.AgentSkills.IDE)
 	}
 }
 

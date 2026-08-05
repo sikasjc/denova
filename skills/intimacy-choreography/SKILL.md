@@ -2,6 +2,7 @@
 name: intimacy-choreography
 description: 把两名及以上主体的亲密/情爱互动编排成结构化动作节拍表(beat sheet)。当用户要求编排亲密场景的动作与情绪推进、body language、亲密节奏，或检查亲密互动的连续性时使用；即使没说“节拍表”，只要重点是“谁先动、如何回应、姿态/情绪/意愿/张力如何变化”也适用。
 agent: ide,interactive_story,intimacy-choreographer
+delegate: intimacy-choreographer
 ---
 
 # intimacy-choreography（亲密动作编排）

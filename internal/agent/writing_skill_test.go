@@ -24,6 +24,7 @@ func TestShouldInlineWritingSkillRecognizesWritingAndReviewTurns(t *testing.T) {
 		{Message: "续写下一章"},
 		{Message: "请修改章节里的这段对白"},
 		{Message: "Please revise this scene."},
+		{Message: "把这章写得更有张力", WritingIntent: config.WritingIntentProseRevision},
 		{Message: "请处理审阅意见", ReviewFeedback: ReviewFeedbackRefs{{ReviewThreadID: "thread-1", CommentIDs: []string{"comment-1"}}}},
 	} {
 		if !ShouldInlineWritingSkill(req) {
@@ -34,10 +35,35 @@ func TestShouldInlineWritingSkillRecognizesWritingAndReviewTurns(t *testing.T) {
 		{Message: "帮我分析 progress.md 是否有问题"},
 		{Message: "讨论一下人物关系"},
 		{Message: "/rewrite chapters/ch01.md"},
+		{Message: "创作方向要不要调整", WritingIntent: config.WritingIntentPlanning},
 	} {
 		if ShouldInlineWritingSkill(req) {
 			t.Fatalf("expected dynamic/no writing skill for %#v", req)
 		}
+	}
+}
+
+func TestShouldInlineWritingSkillTrustsStructuredIntentBeforeKeywordFallback(t *testing.T) {
+	if !ShouldInlineWritingSkill(ChatRequest{
+		Message:       "完成第十章",
+		WritingIntent: config.WritingIntentProseGeneration,
+	}) {
+		t.Fatal("structured prose_generation intent should inline without keyword matching")
+	}
+	if ShouldInlineWritingSkill(ChatRequest{
+		Message:       "讨论一下改写方案",
+		WritingIntent: config.WritingIntentAnalysis,
+	}) {
+		t.Fatal("structured analysis intent should suppress broad rewrite keyword matching")
+	}
+}
+
+func TestInlineWritingSkillContentLimit(t *testing.T) {
+	if !InlineWritingSkillContentAllowed("short preset") {
+		t.Fatal("small built-in preset should be allowed")
+	}
+	if InlineWritingSkillContentAllowed(strings.Repeat("x", maxInlineWritingSkillRunes+1)) {
+		t.Fatal("oversized built-in preset should fall back to dynamic loading")
 	}
 }
 

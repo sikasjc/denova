@@ -485,6 +485,56 @@ func TestAgentBackendFiltersByAgentFrontmatterAndOverrides(t *testing.T) {
 	}
 }
 
+func TestDelegatedSkillRoutesParentAndKeepsFullMethodForSpecialist(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	dir := filepath.Join(root, "action-choreography")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `---
+name: action-choreography
+description: choreograph action
+agent: ide,choreographer
+delegate: choreographer
+---
+
+# Full method
+
+[STAGE] then [BEATS]
+`
+	if err := os.WriteFile(filepath.Join(dir, SkillFileName), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dirs := []Directory{{Scope: ScopeBuiltin, Path: root}}
+
+	parentSkill, err := NewAgentBackend(dirs, "ide", nil).WithDelegates(map[string]bool{"choreographer": true}).Get(ctx, "action-choreography")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(parentSkill.Content, "subagent_type: choreographer") || strings.Contains(parentSkill.Content, "# Full method") {
+		t.Fatalf("parent should receive only delegation router: %q", parentSkill.Content)
+	}
+
+	specialistSkill, err := NewAgentBackend(dirs, "choreographer", nil).Get(ctx, "action-choreography")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(specialistSkill.Content, "# Full method") || strings.Contains(specialistSkill.Content, "subagent_type: choreographer") {
+		t.Fatalf("specialist should receive full method: %q", specialistSkill.Content)
+	}
+
+	fallbackSkill, err := NewAgentBackend(dirs, "ide", nil).Get(ctx, "action-choreography")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fallbackSkill.Content, "[action-choreography BLOCKED]") ||
+		!strings.Contains(fallbackSkill.Content, "Agents 页") ||
+		strings.Contains(fallbackSkill.Content, "# Full method") {
+		t.Fatalf("parent should receive an explicit blocker when specialist is unavailable: %q", fallbackSkill.Content)
+	}
+}
+
 func TestAgentBackendExposesConfigManagerBuiltinSkills(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()

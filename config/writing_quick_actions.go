@@ -12,12 +12,24 @@ const (
 	MaxWritingQuickActionPromptRunes = 262144
 )
 
+type WritingIntent string
+
+const (
+	WritingIntentAuto              WritingIntent = ""
+	WritingIntentPlanning          WritingIntent = "planning"
+	WritingIntentProseGeneration   WritingIntent = "prose_generation"
+	WritingIntentProseRevision     WritingIntent = "prose_revision"
+	WritingIntentReviewApplication WritingIntent = "review_application"
+	WritingIntentAnalysis          WritingIntent = "analysis"
+)
+
 // WritingQuickAction describes one user-configurable Writing Agent draft shortcut.
 // Prompt is inserted into the composer as a user message and remains editable before send.
 type WritingQuickAction struct {
-	ID     string `toml:"id" json:"id"`
-	Label  string `toml:"label,omitempty" json:"label,omitempty"`
-	Prompt string `toml:"prompt" json:"prompt"`
+	ID     string        `toml:"id" json:"id"`
+	Label  string        `toml:"label,omitempty" json:"label,omitempty"`
+	Prompt string        `toml:"prompt" json:"prompt"`
+	Intent WritingIntent `toml:"intent,omitempty" json:"intent,omitempty"`
 }
 
 func sanitizeWritingQuickActions(actions *[]WritingQuickAction) *[]WritingQuickAction {
@@ -47,9 +59,27 @@ func sanitizeWritingQuickActions(actions *[]WritingQuickAction) *[]WritingQuickA
 			ID:     id,
 			Label:  truncateWritingQuickActionRunes(strings.TrimSpace(action.Label), MaxWritingQuickActionLabelRunes),
 			Prompt: truncateWritingQuickActionRunes(strings.TrimSpace(action.Prompt), MaxWritingQuickActionPromptRunes),
+			Intent: NormalizeWritingIntent(action.Intent),
 		})
 	}
 	return &sanitized
+}
+
+func NormalizeWritingIntent(intent WritingIntent) WritingIntent {
+	switch WritingIntent(strings.TrimSpace(string(intent))) {
+	case WritingIntentPlanning:
+		return WritingIntentPlanning
+	case WritingIntentProseGeneration:
+		return WritingIntentProseGeneration
+	case WritingIntentProseRevision:
+		return WritingIntentProseRevision
+	case WritingIntentReviewApplication:
+		return WritingIntentReviewApplication
+	case WritingIntentAnalysis:
+		return WritingIntentAnalysis
+	default:
+		return WritingIntentAuto
+	}
 }
 
 func truncateWritingQuickActionRunes(value string, maximum int) string {

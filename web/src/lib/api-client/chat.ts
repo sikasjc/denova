@@ -2,6 +2,7 @@ import type { UIMessageChunk } from 'ai'
 import { fetchAPI, jsonHeaders, parseUIMessageStream, readErrorMessage, requestJSON } from './client'
 import type { AgentRunTrace, AgentRunTraceSummary, ContextAnalysis, IDEContext, SessionSummary, TextSelection } from './types'
 import type { AgentUIMessage } from '@/lib/agent-ui'
+import type { WritingIntent } from '@/features/settings/types'
 
 export interface AgentRunTraceExportFile {
   filename: string
@@ -20,6 +21,7 @@ export async function sendMessage(
   ideContext?: IDEContext,
   imagePresetId?: string,
   tellerId?: string,
+  writingIntent?: WritingIntent,
 ): Promise<ReadableStream<UIMessageChunk>> {
   const res = await fetchAPI('/api/chat', {
     method: 'POST',
@@ -38,6 +40,7 @@ export async function sendMessage(
       ide_context: normalizeIDEContext(ideContext),
       plan_mode: planMode || false,
       writing_skill: writingSkill || undefined,
+      writing_intent: writingIntent || undefined,
       image_preset_id: imagePresetId || undefined,
       teller_id: tellerId || undefined,
     }),
@@ -61,6 +64,7 @@ export async function analyzeChatContext(
   ideContext?: IDEContext,
   imagePresetId?: string,
   tellerId?: string,
+  writingIntent?: WritingIntent,
 ): Promise<ContextAnalysis> {
   return requestJSON('/api/chat/context-analysis', {
     method: 'POST',
@@ -79,6 +83,7 @@ export async function analyzeChatContext(
       ide_context: normalizeIDEContext(ideContext),
       plan_mode: planMode || false,
       writing_skill: writingSkill || undefined,
+      writing_intent: writingIntent || undefined,
       image_preset_id: imagePresetId || undefined,
       teller_id: tellerId || undefined,
     }),

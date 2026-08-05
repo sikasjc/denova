@@ -63,7 +63,10 @@ export interface WritingQuickActionSettings {
   id: string
   label?: string
   prompt: string
+  intent?: WritingIntent
 }
+
+export type WritingIntent = 'planning' | 'prose_generation' | 'prose_revision' | 'review_application' | 'analysis'
 
 export interface ModelProfileSettings {
   id?: string

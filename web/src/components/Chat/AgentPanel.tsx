@@ -29,6 +29,7 @@ import { APIError } from '@/lib/api-client'
 import { useWritingQuickActions } from '@/hooks/useWritingQuickActions'
 import { AgentQuickActions } from './AgentQuickActions'
 import { WritingQuickActionsMenu } from './WritingQuickActionsMenu'
+import type { WritingIntent } from '@/features/settings/types'
 
 type AgentPanelView = 'chat' | 'sessions' | 'traces'
 
@@ -71,7 +72,7 @@ interface AgentPanelProps {
   onDeleteSession: (id: string) => void | Promise<void>
   onLoadEarlierHistory: () => void | Promise<void>
   onSend: (message: string, options?: ChatSendOptions) => boolean | Promise<boolean>
-  onAnalyzeContext: (message: string, options?: { writingSkill?: string; ideContext?: IDEContext; imagePresetId?: string; tellerId?: string }) => Promise<ContextAnalysis>
+  onAnalyzeContext: (message: string, options?: { writingSkill?: string; writingIntent?: WritingIntent; ideContext?: IDEContext; imagePresetId?: string; tellerId?: string }) => Promise<ContextAnalysis>
   onStop: () => void
   onReferenceRemove: (path: string) => void
   onLoreReferenceAdd: (id: string) => void
@@ -154,7 +155,7 @@ export function AgentPanel({
 }: AgentPanelProps) {
   const { t } = useTranslation()
   const [view, setView] = useState<AgentPanelView>('chat')
-  const [inputPrefill, setInputPrefill] = useState<{ prompt: string; nonce: number } | null>(null)
+  const [inputPrefill, setInputPrefill] = useState<{ prompt: string; nonce: number; writingIntent?: WritingIntent } | null>(null)
   const [contextAnalysisOpen, setContextAnalysisOpen] = useState(false)
   const [contextAnalysisLoading, setContextAnalysisLoading] = useState(false)
   const [contextAnalysisError, setContextAnalysisError] = useState<string | null>(null)
@@ -213,12 +214,12 @@ export function AgentPanel({
     }
   }, [onSubAgentDetailsChange])
 
-  const handleAnalyzeContext = async (message: string) => {
+  const handleAnalyzeContext = async (message: string, writingIntent?: WritingIntent) => {
     setContextAnalysisLoading(true)
     setContextAnalysisError(null)
     setContextAnalysis(null)
     try {
-      setContextAnalysis(await onAnalyzeContext(message, { writingSkill, ideContext, imagePresetId, tellerId: ideTellerId }))
+      setContextAnalysis(await onAnalyzeContext(message, { writingSkill, writingIntent, ideContext, imagePresetId, tellerId: ideTellerId }))
     } catch (e) {
       setContextAnalysis(null)
       setContextAnalysisError((e as Error).message)
@@ -252,10 +253,11 @@ export function AgentPanel({
     }))
   }
 
-  const prefillComposer = (prompt: string) => {
+  const prefillComposer = (prompt: string, writingIntent?: WritingIntent) => {
     setInputPrefill((current) => ({
       prompt,
       nonce: (current?.nonce || 0) + 1,
+      writingIntent,
     }))
   }
 
@@ -283,7 +285,7 @@ export function AgentPanel({
       }))
   ), [activeRunID, changeGroupsQuery.data, isStreaming, onOpenChangeReview, onWorkspaceChanged, workspace])
 
-  const sendWithWritingSkill = async (message: string) => {
+  const sendWithWritingSkill = async (message: string, writingIntent?: WritingIntent) => {
     const feedbackSelection = reviewFeedback?.filter((selection) => selection.comments.length) ?? []
     const feedback = feedbackSelection.length ? feedbackSelection.map((selection) => ({
       source: selection.source || 'workspace_change' as const,
@@ -325,6 +327,7 @@ export function AgentPanel({
     }
     const accepted = await onSend(effectiveMessage, {
       writingSkill,
+      writingIntent: feedbackSelection.length ? 'review_application' : writingIntent,
       ideContext,
       imagePresetId,
       tellerId: ideTellerId,
@@ -412,6 +415,7 @@ export function AgentPanel({
         onOpenSettings={() => onOpenQuickActionSettings?.()}
       />
     ),
+    showWritingIntentControl: true,
     writingSkillControl: (
       <WritingComposerSettingsMenu
         enabled={Boolean(workspace) && !persistedSettings.loading}

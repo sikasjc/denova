@@ -432,6 +432,15 @@ const chat = {
   'chat.quick.currentSessionHint': '动作会填入当前会话的编辑框；需要隔离上下文时，请先新建会话。',
   'chat.quick.empty': '当前没有快捷创作按钮，点击前往设置。',
   'chat.quick.prefillHint': '点击按钮会填入编辑框，你可以修改后再发送。',
+  'chat.writingIntent.label': '写作任务类型',
+  'chat.writingIntent.description': '决定本轮是否直接加载 Writing preset；不会写入发送文本。',
+  'chat.writingIntent.auto': '自动',
+  'chat.writingIntent.planning': '规划',
+  'chat.writingIntent.proseGeneration': '正文创作',
+  'chat.writingIntent.proseRevision': '正文修订',
+  'chat.writingIntent.reviewApplication': '应用审阅',
+  'chat.writingIntent.analysis': '检查分析',
+  'chat.writingIntent.reviewLocked': '当前携带审阅意见，任务类型固定为应用审阅。',
 } as const
 
 export default chat

@@ -82,8 +82,8 @@ func TestBuiltinWritingPresetInstructionsUseMinimalPatchContract(t *testing.T) {
 func TestBuiltinWritingPresetInstructionsStayCompactForInlineDelivery(t *testing.T) {
 	maxBytes := map[string]int{
 		"novel-lite":     2500,
-		"novel-standard": 3500,
-		"novel-heavy":    6500,
+		"novel-standard": 4500,
+		"novel-heavy":    8000,
 	}
 	for name, maximum := range maxBytes {
 		content := readBuiltinWritingPreset(t, name)
@@ -104,6 +104,45 @@ func TestBuiltinWritingPresetInstructionsCoverTaskDelegation(t *testing.T) {
 			if !strings.Contains(content, required) {
 				t.Fatalf("%s missing task delegation instruction %q", name, required)
 			}
+		}
+	}
+}
+
+func TestBuiltinWritingPresetChoreographyPolicy(t *testing.T) {
+	lite := readBuiltinWritingPreset(t, "novel-lite")
+	if !strings.Contains(lite, "禁止启动 reviewer、fixer、task 或 General SubAgent") {
+		t.Fatalf("novel-lite should keep choreography and all SubAgents disabled")
+	}
+	for _, forbidden := range []string{"choreographer", "intimacy-choreographer"} {
+		if strings.Contains(lite, forbidden) {
+			t.Fatalf("novel-lite should not reference %q", forbidden)
+		}
+	}
+
+	standard := readBuiltinWritingPreset(t, "novel-standard")
+	for _, required := range []string{
+		"按需编排",
+		"subagent_type=choreographer",
+		"subagent_type=intimacy-choreographer",
+		"同一场景最多调用一个 choreography SubAgent 一次",
+		"普通对白",
+		"不自行升级或净化",
+	} {
+		if !strings.Contains(standard, required) {
+			t.Fatalf("novel-standard missing choreography policy %q", required)
+		}
+	}
+
+	heavy := readBuiltinWritingPreset(t, "novel-heavy")
+	for _, required := range []string{
+		"context-planner -> choreographer/intimacy-choreographer -> writer",
+		"Context Plan 标记复杂编排风险",
+		"## Choreography Need",
+		"不需要 choreography",
+		"不自行升级或净化",
+	} {
+		if !strings.Contains(heavy, required) {
+			t.Fatalf("novel-heavy missing choreography policy %q", required)
 		}
 	}
 }
