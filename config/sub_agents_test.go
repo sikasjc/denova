@@ -67,6 +67,14 @@ func TestConfigTemplatePreseedsEditableWritingPipelineOnly(t *testing.T) {
 	if got := subAgentIDs(settings.SubAgents); !reflect.DeepEqual(got, want) {
 		t.Fatalf("template writing subagents = %#v, want %#v", got, want)
 	}
+	wantRoles := map[string]ComputeRole{
+		"context-planner": ComputeRoleReasoning,
+		"writer":          ComputeRoleProse,
+		"reviewer":        ComputeRoleReasoning,
+		"fixer":           ComputeRoleProse,
+		"final-gate":      ComputeRoleMechanical,
+		"memory-patcher":  ComputeRoleMechanical,
+	}
 	for _, sub := range settings.SubAgents {
 		if !SubAgentEnabled(sub) {
 			t.Fatalf("template subagent should be enabled: %#v", sub)
@@ -76,6 +84,9 @@ func TestConfigTemplatePreseedsEditableWritingPipelineOnly(t *testing.T) {
 		}
 		if len(sub.Parents) != 1 || sub.Parents[0] != AgentKindIDE {
 			t.Fatalf("writing subagent should only belong to IDE: %#v", sub)
+		}
+		if sub.ComputeRole != wantRoles[sub.ID] {
+			t.Fatalf("writing subagent %s compute_role = %q, want %q", sub.ID, sub.ComputeRole, wantRoles[sub.ID])
 		}
 	}
 }

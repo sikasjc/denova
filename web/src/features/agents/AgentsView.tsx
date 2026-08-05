@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { Bot, Brain, Check, ChevronDown, ChevronRight, Edit3, FolderOpen, Plus, ScrollText, Trash2, Wrench } from 'lucide-react'
+import { Bot, Brain, Check, ChevronDown, ChevronRight, Cpu, Edit3, FolderOpen, Plus, ScrollText, Trash2, Wrench } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { ConfigManagerChat } from '@/components/Chat/ConfigManagerChat'
 import { AutosaveStatusIndicator } from '@/components/forms/autosave-status'
@@ -18,8 +18,9 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import type { AgentContextOverride, AgentModelOverride, AgentPromptBlocks, AgentPromptOverride, AgentPromptSource, AgentSkillOverride, AgentToolOverride, LayeredSettings, ModelProfileSettings, Settings, SettingsLayer, SubAgentConfig } from '@/features/settings/types'
+import type { AgentContextOverride, AgentModelOverride, AgentPromptBlocks, AgentPromptOverride, AgentPromptSource, AgentSkillOverride, AgentToolOverride, ComputeRole, LayeredSettings, ModelProfileSettings, Settings, SettingsLayer, SubAgentConfig, WritingComputeTierRow } from '@/features/settings/types'
 import { modelProfileID, modelProfileLabel, modelProfilesWithDefault } from '@/features/settings/model-profiles'
+import { COMPUTE_ROLES, DEFAULT_FAST_MODEL_PROFILE_ID, WRITING_COMPUTE_TIERS, applyFastProfileToRows, normalizeWritingComputeTier, tierRoleRows } from '@/features/settings/compute-tier'
 import { useLayeredSettingsDraft } from '@/features/settings/use-layered-settings-draft'
 import { getSkills } from '@/lib/api'
 import type { SkillSummary } from '@/lib/api'
@@ -77,6 +78,12 @@ export function AgentsView({ onClose }: { onClose?: () => void }) {
   const generalSubAgents = draft.general_sub_agents ?? {}
   const previewGeneralSubAgents = useMemo(() => previewGeneralSubAgentSettings(layered, activeLayer, draft), [activeLayer, draft, layered])
   const subAgents = draft.sub_agents ?? []
+  const computeTier = normalizeWritingComputeTier(draft.writing_compute_tier ?? effective.writing_compute_tier)
+  const computeFastProfileId = (draft.writing_compute_fast_profile_id ?? effective.writing_compute_fast_profile_id ?? '').trim() || DEFAULT_FAST_MODEL_PROFILE_ID
+  const computeTierRows = useMemo(
+    () => applyFastProfileToRows(layered?.writing_compute_tiers ?? [], computeFastProfileId),
+    [layered?.writing_compute_tiers, computeFastProfileId],
+  )
   const configManagerWorkspaceKey = layered?.paths.workspace_config || layered?.paths.user_config || 'agents'
   const configManagerContext = useMemo(() => ({
     active_settings_layer: activeLayer,
@@ -164,6 +171,14 @@ export function AgentsView({ onClose }: { onClose?: () => void }) {
       ...current,
       sub_agents: updater(current.sub_agents ?? []),
     }))
+  }
+
+  const setComputeTier = (tier: string) => {
+    setDraft((current) => ({ ...current, writing_compute_tier: tier }))
+  }
+
+  const setComputeFastProfile = (profileID: string) => {
+    setDraft((current) => ({ ...current, writing_compute_fast_profile_id: profileID }))
   }
 
   const setGeneralSubAgent = (agent: DeepAgentParentKey, value: boolean | null) => {
@@ -311,17 +326,31 @@ export function AgentsView({ onClose }: { onClose?: () => void }) {
                     onChange={setAgentTool}
                   />
                   {isDeepAgentParent(activeAgent) && (
-                    <AgentSubAgentSection
-                      agent={activeAgent}
-                      inheritedModel={inheritedModel}
-                      generalSettings={generalSubAgents}
-                      effectiveGeneralSettings={previewGeneralSubAgents}
-                      subAgents={subAgents}
-                      effectiveSubAgents={effective.sub_agents ?? []}
-                      profiles={profileOptions}
-                      onGeneralChange={setGeneralSubAgent}
-                      onChange={setSubAgents}
-                    />
+                    <>
+                      {activeAgent === 'ide' && activeLayer === 'user' && (
+                        <AgentComputeTierSection
+                          tier={computeTier}
+                          tierRows={computeTierRows}
+                          fastProfileId={computeFastProfileId}
+                          profiles={profileOptions}
+                          onChange={setComputeTier}
+                          onFastProfileChange={setComputeFastProfile}
+                        />
+                      )}
+                      <AgentSubAgentSection
+                        agent={activeAgent}
+                        inheritedModel={inheritedModel}
+                        computeTier={computeTier}
+                        computeTierRows={computeTierRows}
+                        generalSettings={generalSubAgents}
+                        effectiveGeneralSettings={previewGeneralSubAgents}
+                        subAgents={subAgents}
+                        effectiveSubAgents={effective.sub_agents ?? []}
+                        profiles={profileOptions}
+                        onGeneralChange={setGeneralSubAgent}
+                        onChange={setSubAgents}
+                      />
+                    </>
                   )}
                   {effectiveTools.skills && (
                     <AgentSkillSection
@@ -757,9 +786,86 @@ function toolRowsForAgent(agent: VisibleAgentKey) {
   return TOOL_ROWS.filter((tool) => tool.key !== 'agent_config_read' && tool.key !== 'agent_config_write')
 }
 
-function AgentSubAgentSection({ agent, inheritedModel, generalSettings, effectiveGeneralSettings, subAgents, effectiveSubAgents, profiles, onGeneralChange, onChange }: {
+function AgentComputeTierSection({ tier, tierRows, fastProfileId, profiles, onChange, onFastProfileChange }: {
+  tier: string
+  tierRows: WritingComputeTierRow[]
+  fastProfileId: string
+  profiles: Array<{ id: string; label: string }>
+  onChange: (tier: string) => void
+  onFastProfileChange: (profileID: string) => void
+}) {
+  const { t } = useTranslation()
+  const normalized = normalizeWritingComputeTier(tier)
+  const roles = tierRoleRows(tierRows, normalized)
+  const profileLabel = (id: string) => profiles.find((profile) => profile.id === id)?.label ?? id
+  return (
+    <section className="flex flex-col gap-3 border-b border-[var(--nova-border)] pb-5">
+      <SectionTitle icon={Cpu} title={t('agents.computeTier.title')} />
+      <div className="text-[11px] leading-5 text-[var(--nova-text-faint)]">{t('agents.computeTier.description')}</div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <Field label={t('agents.computeTier.title')}>
+          <Select value={normalized} onValueChange={onChange}>
+            <SelectTrigger size="sm" className="min-w-0 flex-1" aria-label={t('agents.computeTier.title')}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {WRITING_COMPUTE_TIERS.map((option) => (
+                  <SelectItem key={option} value={option}>{t(`agents.computeTier.preset.${option}`)}</SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label={t('agents.computeTier.fastProfile')}>
+          <Select value={fastProfileId} onValueChange={onFastProfileChange}>
+            <SelectTrigger size="sm" className="min-w-0 flex-1" aria-label={t('agents.computeTier.fastProfile')}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {profiles.map((profile) => (
+                  <SelectItem key={profile.id} value={profile.id}>{profile.label}</SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </Field>
+      </div>
+      <div>
+        <div className="mb-1.5 text-[var(--nova-text-muted)]">{t('agents.computeTier.summary')}</div>
+        <div className="grid gap-2 md:grid-cols-3">
+          {COMPUTE_ROLES.map((role) => {
+            const plan = roles[role]
+            const modelLabel = plan?.profile_id ? profileLabel(plan.profile_id) : t('agents.computeTier.model.pro')
+            const thinking = plan?.enable_thinking
+            const thinkingLabel = thinking === false ? t('agents.computeTier.thinking.off') : t('agents.computeTier.thinking.on')
+            return (
+              <div key={role} className="rounded-[var(--nova-radius)] border border-[var(--nova-border)] bg-[var(--nova-surface)] px-3 py-2">
+                <div className="flex items-center gap-1.5 text-[var(--nova-text)]">
+                  <Check className="h-3.5 w-3.5 text-[var(--nova-accent-green)]" />
+                  <span className="font-medium">{t(`agents.computeTier.role.${role}`)}</span>
+                </div>
+                <div className="mt-1 truncate text-[11px] text-[var(--nova-text-faint)]" title={`${modelLabel} · ${thinkingLabel}`}>
+                  {modelLabel} · {thinkingLabel}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      <div className="rounded-[var(--nova-radius)] border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-3 py-2 text-[11px] leading-5 text-[var(--nova-text-faint)]">
+        {t('agents.computeTier.note')}
+      </div>
+    </section>
+  )
+}
+
+function AgentSubAgentSection({ agent, inheritedModel, computeTier, computeTierRows, generalSettings, effectiveGeneralSettings, subAgents, effectiveSubAgents, profiles, onGeneralChange, onChange }: {
   agent: DeepAgentParentKey
   inheritedModel: AgentModelOverride
+  computeTier: string
+  computeTierRows: WritingComputeTierRow[]
   generalSettings: Settings['general_sub_agents']
   effectiveGeneralSettings: Settings['general_sub_agents']
   subAgents: SubAgentConfig[]
@@ -920,7 +1026,7 @@ function AgentSubAgentSection({ agent, inheritedModel, generalSettings, effectiv
                 id={editingSubAgent.id}
                 agent={agent}
                 subAgent={editingSubAgent.value}
-                inheritedModel={inheritedModel}
+                inheritedModel={tierAdjustedInheritedModel(agent, inheritedModel, computeTier, computeTierRows, editingSubAgent.value.compute_role)}
                 profiles={profiles}
                 onChange={updateEditingSubAgent}
               />
@@ -1102,6 +1208,21 @@ function SubAgentEditor({ id, agent, subAgent, inheritedModel, profiles, onChang
             </SelectContent>
           </Select>
         </Field>
+        {agent === 'ide' && (
+          <Field label={t('agents.subAgents.computeRole')}>
+            <Select value={subAgent.compute_role || '__none__'} onValueChange={(role) => onChange(id, { compute_role: role === '__none__' ? '' : role })}>
+              <SelectTrigger size="sm" className="w-full" aria-label={t('agents.subAgents.computeRole')}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="__none__">{t('agents.subAgents.computeRole.none')}</SelectItem>
+                  {COMPUTE_ROLES.map((role) => (
+                    <SelectItem key={role} value={role}>{t(`agents.subAgents.computeRole.${role}`)}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+        )}
       </div>
       <div>
         <div className="mb-1.5 text-[var(--nova-text-muted)]">{t('agents.subAgents.parents')}</div>
@@ -1528,6 +1649,28 @@ function mergeAgentModelOverride(parent: AgentModelOverride, child: AgentModelOv
     enable_thinking: child.enable_thinking ?? parent.enable_thinking,
     reasoning_effort: child.reasoning_effort || parent.reasoning_effort,
   }
+}
+
+// tierAdjustedInheritedModel 计算某个 SubAgent 在"无显式 model 覆盖"时实际继承到的模型：
+// 父 Agent 继承 ⊕ 写作算力档位按 ComputeRole 的调整。这样编辑器里显示的"继承"值与后端
+// ResolveSubAgentModel 的解析结果一致，作者能看清档位对该阶段的影响；显式覆盖仍优先展示。
+// 档位只作用于写作父 Agent（ide）。
+function tierAdjustedInheritedModel(
+  agent: DeepAgentParentKey,
+  inheritedModel: AgentModelOverride,
+  computeTier: string,
+  computeTierRows: WritingComputeTierRow[],
+  role?: string,
+): AgentModelOverride {
+  if (agent !== 'ide') return inheritedModel
+  const normalizedRole = (role ?? '') as ComputeRole
+  const roles = tierRoleRows(computeTierRows, computeTier)
+  const plan = roles[normalizedRole]
+  if (!plan) return inheritedModel
+  return mergeAgentModelOverride(inheritedModel, {
+    profile_id: plan.profile_id || '',
+    enable_thinking: plan.enable_thinking ?? null,
+  })
 }
 
 function mergeAgentPromptOverride(parent: AgentPromptOverride, child: AgentPromptOverride): AgentPromptOverride {

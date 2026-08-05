@@ -20,6 +20,17 @@ openai_base_url = "https://api.deepseek.com"
 openai_api_key = ""
 openai_model = "deepseek-v4-pro"
 
+# flash 快速模型：写作算力档位（balanced / speed）会把推理与检查阶段的 SubAgent
+# 下放到这里，降低延迟与成本。id 固定为 "flash"（DefaultFastModelProfileID）；
+# 不配置或删除该 profile 时，档位会自动回退到 default（pro），功能安全降级。
+# openai_api_key / openai_base_url 留空则继承 default profile。
+[[model_profiles]]
+id = "flash"
+name = "DeepSeek 快速"
+openai_base_url = "https://api.deepseek.com"
+openai_api_key = ""
+openai_model = "deepseek-v4-flash"
+
 # 可选：配置更多 OpenAI 协议兼容平台，并按 Agent 分配。模型名同时作为配置名，name 可作为显示别名。
 # [[model_profiles]]
 # openai_base_url = "https://api.openai.com/v1"
@@ -84,12 +95,15 @@ default_output_format = "png"
 # 预置写作 SubAgent。它们只是普通配置项，不是 Go 代码内置默认值；
 # 可以在 Agents 页像自定义 SubAgent 一样改名、改提示词、限制工具或关闭。
 # parents = ["ide"] 表示只供写作 Agent 使用。
+# compute_role 标注该阶段的认知负载类别（prose 正文 / reasoning 推理 / mechanical 检查），
+# 供写作算力档位按类整体切换模型与思考开关；显式 [sub_agents.model] 覆盖仍优先于档位。
 [[sub_agents]]
 id = "context-planner"
 name = "上下文规划"
 description = "写作前整理范围、目标、约束和风险，不写正文。"
 enabled = true
 parents = ["ide"]
+compute_role = "reasoning"
 system_prompt = '''
 你是写作规划 SubAgent。只负责在正文生成前整理 Context Plan，不写正文、不改文件。
 可读取必要前文、CREATOR.md、大纲、进度、角色状态和资料库作为依据。
@@ -103,6 +117,7 @@ name = "初稿写作"
 description = "按用户要求、Writing Skill 和上下文计划生成正文初稿。"
 enabled = true
 parents = ["ide"]
+compute_role = "prose"
 system_prompt = '''
 你是写作初稿 SubAgent。根据用户 Prompt、已加载 Writing Skill、父 Agent 提供的 Context Plan 和必要上下文生成正文初稿。
 严格按用户要求的范围写作，不默认推进到下一章，不擅自改写大纲、进度、角色状态或资料库。
@@ -116,6 +131,7 @@ name = "严格审稿"
 description = "审查新增章节的连续性、设定、人物、节奏和语言问题。"
 enabled = true
 parents = ["ide"]
+compute_role = "reasoning"
 system_prompt = '''
 你是严格审稿 SubAgent，只审稿，不改正文，不写文件。
 可读取必要前文、CREATOR.md、大纲、进度、角色状态和资料库作为对照依据。
@@ -130,6 +146,7 @@ name = "定向修稿"
 description = "根据审稿意见修正真正需要修的问题，同时保留原故事。"
 enabled = true
 parents = ["ide"]
+compute_role = "prose"
 system_prompt = '''
 你是修稿 SubAgent。根据 reviewer 的结构化问题和父 Agent 的明确要求修正文稿，只修真正需要修的问题。
 必须保留用户要求的内容、有效情节节点、人物声线、强段落、伏笔和连续性；不要把初稿重写成另一个故事。
@@ -147,6 +164,7 @@ name = "最终门禁"
 description = "检查修订稿是否满足用户要求、计划、设定和风格约束。"
 enabled = true
 parents = ["ide"]
+compute_role = "mechanical"
 system_prompt = '''
 你是终检 SubAgent。只对修订稿做最终质量门禁，不扩写正文。
 核对用户 Prompt、Context Plan、Writing Skill 要求、CREATOR.md、长期大纲、角色设定、世界观、已有连续性和风格约束。
@@ -160,6 +178,7 @@ name = "状态补丁"
 description = "根据最终稿生成进度、角色状态、世界状态和伏笔更新建议。"
 enabled = true
 parents = ["ide"]
+compute_role = "mechanical"
 system_prompt = '''
 你是写作状态更新 SubAgent。只基于最终稿中已经发生并确认的内容生成状态更新建议，不虚构未写出的剧情。
 可读取 progress.md、character-state.md、CREATOR.md、大纲和资料库以判断变化。
@@ -203,6 +222,16 @@ model_max_retries = 5
 plan_mode_default = false
 # 写作 Agent 默认叙事编排 ID（当前工作区级配置，字段名沿用 ide_story_teller_id）
 ide_story_teller_id = "classic"
+# 写作算力档位：控制写作管线各阶段 SubAgent 的模型与思考强度。
+#   quality  = 全部阶段用 pro + 思考（质量优先，等价历史行为）
+#   balanced = 正文(writer/fixer)用 pro，推理/检查阶段下放到 flash（默认，平衡质量与成本）
+#   speed    = 全部阶段用 flash，仅正文保留思考（速度优先）
+# 显式为某个 SubAgent 配置 [sub_agents.model] 时，其覆盖优先于档位。
+writing_compute_tier = "balanced"
+# 档位快速阶段（balanced/speed 的推理/检查阶段）引用的模型 profile id，默认 "flash"。
+# 可改成任意已配置 profile 的 id，把这些阶段下放到你选的快速模型；该 profile 不存在时
+# 自动回退到 default（pro），安全降级。
+writing_compute_fast_profile_id = "flash"
 
 # 互动模式
 interactive_stage_line_height = 1.78

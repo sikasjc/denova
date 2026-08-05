@@ -54,6 +54,8 @@ export interface Settings {
   ide_story_teller_id?: string
   ide_image_preset_id?: string
   writing_skill_default?: string
+  writing_compute_tier?: string
+  writing_compute_fast_profile_id?: string
   writing_quick_actions?: WritingQuickActionSettings[]
   interactive_stage_font_size?: number | null
   interactive_stage_line_height?: number | null
@@ -192,6 +194,21 @@ export interface SubAgentConfig {
   parents?: string[]
   model?: AgentModelOverride
   tools?: AgentToolOverride
+  compute_role?: string
+}
+
+// 写作算力档位定义：由后端 WritingComputeTierRows() 导出，前端据此渲染档位选择器
+// 与"阶段 → 模型/思考"汇总，无需前端重复档位映射逻辑。
+export type ComputeRole = 'prose' | 'reasoning' | 'mechanical'
+
+export interface WritingComputeTierRoleRow {
+  profile_id?: string
+  enable_thinking?: boolean | null
+}
+
+export interface WritingComputeTierRow {
+  id: string
+  roles: Partial<Record<ComputeRole, WritingComputeTierRoleRow>>
 }
 
 interface AgentPromptSettings {
@@ -292,6 +309,7 @@ export interface LayeredSettings {
   builtin_agent_prompts?: AgentPromptSettings
   builtin_agent_prompt_blocks?: AgentPromptBlockSettings
   builtin_agent_prompt_sources?: AgentPromptSourceSettings
+  writing_compute_tiers?: WritingComputeTierRow[]
 }
 
 export type SettingsLayer = 'user' | 'workspace'

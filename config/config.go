@@ -52,6 +52,8 @@ type Config struct {
 	IDEImagePresetID            string                       `toml:"-"`
 	ImagePresetToolPrompt       string                       `toml:"-"`
 	WritingSkillDefault         string                       `toml:"writing_skill_default"`
+	WritingComputeTier          WritingComputeTier           `toml:"writing_compute_tier"`
+	WritingComputeFastProfileID string                       `toml:"writing_compute_fast_profile_id"`
 	MaxIteration                int                          `toml:"max_iteration"`
 	ModelMaxRetries             int                          `toml:"model_max_retries"`
 	AgentIdleTimeoutSeconds     int                          `toml:"agent_idle_timeout_seconds"`
@@ -108,6 +110,8 @@ func LoadWithWorkspace(workspace string) (*Config, LayeredSettings, error) {
 		IDEStoryTellerID:            s.IDEStoryTellerID,
 		IDEImagePresetID:            s.IDEImagePresetID,
 		WritingSkillDefault:         s.WritingSkillDefault,
+		WritingComputeTier:          NormalizeWritingComputeTier(s.WritingComputeTier),
+		WritingComputeFastProfileID: NormalizeFastModelProfileID(s.WritingComputeFastProfileID),
 		MaxIteration:                settingsInt(s.MaxIteration, 0),
 		ModelMaxRetries:             settingsInt(s.ModelMaxRetries, 5),
 		AgentIdleTimeoutSeconds:     settingsAgentIdleTimeoutSeconds(s.AgentIdleTimeoutSeconds),
@@ -218,6 +222,8 @@ func settingsFromConfig(cfg *Config) Settings {
 		VolumeDirFormat:          cfg.VolumeDirFormat,
 		IDEImagePresetID:         cfg.IDEImagePresetID,
 		WritingSkillDefault:      cfg.WritingSkillDefault,
+		WritingComputeTier:       cfg.WritingComputeTier,
+		WritingComputeFastProfileID: cfg.WritingComputeFastProfileID,
 	}
 	if cfg.HideChapterBodyLiveOutput {
 		settings.HideChapterBodyLiveOutput = &cfg.HideChapterBodyLiveOutput
@@ -303,6 +309,8 @@ func Load() *Config {
 			IDEStoryTellerID:            d.IDEStoryTellerID,
 			IDEImagePresetID:            d.IDEImagePresetID,
 			WritingSkillDefault:         d.WritingSkillDefault,
+			WritingComputeTier:          NormalizeWritingComputeTier(d.WritingComputeTier),
+			WritingComputeFastProfileID: NormalizeFastModelProfileID(d.WritingComputeFastProfileID),
 			MaxIteration:                settingsInt(d.MaxIteration, 0),
 			ModelMaxRetries:             settingsInt(d.ModelMaxRetries, 5),
 			AgentIdleTimeoutSeconds:     settingsAgentIdleTimeoutSeconds(d.AgentIdleTimeoutSeconds),

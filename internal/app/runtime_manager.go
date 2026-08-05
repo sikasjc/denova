@@ -490,6 +490,8 @@ func applyLayeredSettingsToConfig(cfg *config.Config, layered config.LayeredSett
 		cfg.IDEImagePresetID = effective.IDEImagePresetID
 	}
 	cfg.WritingSkillDefault = effective.WritingSkillDefault
+	cfg.WritingComputeTier = config.NormalizeWritingComputeTier(effective.WritingComputeTier)
+	cfg.WritingComputeFastProfileID = config.NormalizeFastModelProfileID(effective.WritingComputeFastProfileID)
 	cfg.MaxIteration = appSettingsInt(effective.MaxIteration, 0)
 	if effective.ModelMaxRetries != nil {
 		cfg.ModelMaxRetries = appSettingsInt(effective.ModelMaxRetries, 5)
@@ -593,6 +595,12 @@ func applySettingsLayerToConfig(cfg *config.Config, settings config.Settings) {
 	}
 	if settings.WritingSkillDefault != "" {
 		cfg.WritingSkillDefault = settings.WritingSkillDefault
+	}
+	if settings.WritingComputeTier != "" {
+		cfg.WritingComputeTier = config.NormalizeWritingComputeTier(settings.WritingComputeTier)
+	}
+	if settings.WritingComputeFastProfileID != "" {
+		cfg.WritingComputeFastProfileID = config.NormalizeFastModelProfileID(settings.WritingComputeFastProfileID)
 	}
 	if settings.MaxIteration != nil {
 		cfg.MaxIteration = appSettingsInt(settings.MaxIteration, 0)

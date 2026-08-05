@@ -87,6 +87,8 @@ type Settings struct {
 	IDEStoryTellerID         string                `toml:"ide_story_teller_id,omitempty" json:"ide_story_teller_id,omitempty"`
 	IDEImagePresetID         string                `toml:"ide_image_preset_id,omitempty" json:"ide_image_preset_id,omitempty"`
 	WritingSkillDefault      string                `toml:"writing_skill_default,omitempty" json:"writing_skill_default,omitempty"`
+	WritingComputeTier       WritingComputeTier    `toml:"writing_compute_tier,omitempty" json:"writing_compute_tier,omitempty"`
+	WritingComputeFastProfileID string             `toml:"writing_compute_fast_profile_id,omitempty" json:"writing_compute_fast_profile_id,omitempty"`
 	WritingQuickActions      *[]WritingQuickAction `toml:"writing_quick_actions,omitempty" json:"writing_quick_actions,omitempty"`
 
 	// 游戏模式
@@ -169,6 +171,8 @@ func DefaultSettings() Settings {
 		IDEStoryTellerID:           "classic",
 		IDEImagePresetID:           "game-cg",
 		WritingSkillDefault:        DefaultWritingSkillName,
+		WritingComputeTier:         DefaultWritingComputeTier,
+		WritingComputeFastProfileID: DefaultFastModelProfileID,
 		InteractiveStageFontSize:   intPtr(16),
 		InteractiveStageLineHeight: floatPtr(1.78),
 	}
@@ -331,6 +335,12 @@ func Merge(parent, child Settings) Settings {
 	if child.WritingSkillDefault != "" {
 		out.WritingSkillDefault = child.WritingSkillDefault
 	}
+	if child.WritingComputeTier != "" {
+		out.WritingComputeTier = child.WritingComputeTier
+	}
+	if child.WritingComputeFastProfileID != "" {
+		out.WritingComputeFastProfileID = child.WritingComputeFastProfileID
+	}
 	if child.WritingQuickActions != nil {
 		out.WritingQuickActions = child.WritingQuickActions
 	}
@@ -368,6 +378,9 @@ type LayeredSettings struct {
 	BuiltinAgentPrompts       AgentPromptSettings       `json:"builtin_agent_prompts,omitempty"`
 	BuiltinAgentPromptBlocks  AgentPromptBlockSettings  `json:"builtin_agent_prompt_blocks,omitempty"`
 	BuiltinAgentPromptSources AgentPromptSourceSettings `json:"builtin_agent_prompt_sources,omitempty"`
+	// WritingComputeTiers 是写作算力档位 × ComputeRole 的静态映射表，导出给前端渲染
+	// 档位选择器和"阶段 → 模型/思考"汇总，使前后端共用同一份权威档位定义。
+	WritingComputeTiers []WritingComputeTierRow `json:"writing_compute_tiers,omitempty"`
 }
 
 var ErrSettingsRevisionConflict = errors.New("配置已被其他操作更新，请重新加载后再保存")
@@ -583,7 +596,8 @@ func LoadLayeredWithGlobal(novaDir, workspace string, global Settings) (LayeredS
 			LocalURL: LocalHTTPURL(backendPort),
 			LANURL:   LANHTTPURL(backendPort),
 		},
-		Runtime: SettingsRuntime{GOOS: runtime.GOOS},
+		Runtime:             SettingsRuntime{GOOS: runtime.GOOS},
+		WritingComputeTiers: WritingComputeTierRows(NormalizeFastModelProfileID(eff.WritingComputeFastProfileID)),
 	}, nil
 }
 
@@ -628,6 +642,8 @@ func sanitizeEditableSettings(s Settings) Settings {
 	s.MotionIntensity = normalizeMotionIntensity(s.MotionIntensity)
 	s.IDEImagePresetID = strings.TrimSpace(s.IDEImagePresetID)
 	s.WritingSkillDefault = strings.TrimSpace(s.WritingSkillDefault)
+	s.WritingComputeTier = sanitizeWritingComputeTierLayer(s.WritingComputeTier)
+	s.WritingComputeFastProfileID = strings.TrimSpace(s.WritingComputeFastProfileID)
 	s.WritingQuickActions = sanitizeWritingQuickActions(s.WritingQuickActions)
 	s.OpenAIContextWindowTokens = normalizeContextWindowTokens(s.OpenAIContextWindowTokens)
 	s.ImageAPIBaseURL = strings.TrimSpace(s.ImageAPIBaseURL)

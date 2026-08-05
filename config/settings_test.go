@@ -107,6 +107,12 @@ func TestDefaultSettingsValues(t *testing.T) {
 	if s.WritingSkillDefault != DefaultWritingSkillName {
 		t.Fatalf("WritingSkillDefault default: %s", s.WritingSkillDefault)
 	}
+	if s.WritingComputeTier != DefaultWritingComputeTier {
+		t.Fatalf("WritingComputeTier default: %s", s.WritingComputeTier)
+	}
+	if s.WritingComputeFastProfileID != DefaultFastModelProfileID {
+		t.Fatalf("WritingComputeFastProfileID default: %s", s.WritingComputeFastProfileID)
+	}
 	if s.IDEImagePresetID != "game-cg" {
 		t.Fatalf("IDEImagePresetID default: %s", s.IDEImagePresetID)
 	}

@@ -14,6 +14,9 @@ type SubAgentConfig struct {
 	Parents      []string           `toml:"parents,omitempty" json:"parents,omitempty"`
 	Model        AgentModelOverride `toml:"model,omitempty" json:"model,omitempty"`
 	Tools        AgentToolOverride  `toml:"tools,omitempty" json:"tools,omitempty"`
+	// ComputeRole 标注该 SubAgent 在写作管线中的认知负载类别（正文 / 推理 / 检查），
+	// 供写作算力档位按类整体切换模型与思考开关。空值表示不参与档位映射，完全继承父级。
+	ComputeRole ComputeRole `toml:"compute_role,omitempty" json:"compute_role,omitempty"`
 }
 
 // AgentGeneralSubAgentSettings stores the built-in General SubAgent switch per
@@ -144,6 +147,7 @@ func SanitizeSubAgents(subAgents []SubAgentConfig) []SubAgentConfig {
 		sub.Parents = sanitizeSubAgentParents(sub.Parents)
 		sub.Model.ProfileID = normalizeModelProfileID(sub.Model.ProfileID)
 		sub.Model.ReasoningEffort = normalizeReasoningEffort(sub.Model.ReasoningEffort)
+		sub.ComputeRole = NormalizeComputeRole(sub.ComputeRole)
 		if sub.Name == "" {
 			sub.Name = sub.ID
 		}
@@ -196,8 +200,21 @@ func SubAgentAllowedForParent(sub SubAgentConfig, parentKind string) bool {
 	return false
 }
 
+// ResolveSubAgentModel 解析一个写作/游戏 SubAgent 的最终模型设置。
+//
+// 解析顺序（后者覆盖前者）：
+//  1. 父 Agent 继承（parentKind 的已解析模型，如 IDE 默认 pro + 思考）；
+//  2. 写作算力档位按 ComputeRole 的整体调整（仅当 parentKind == ide 时套用）；
+//  3. 该 SubAgent 显式的 sub.Model 覆盖（作者在 Agents 页逐个精细控制，永远优先）。
+//
+// 这样档位是"父继承"与"显式覆盖"之间的一层：作者不动任何 SubAgent 也能一键切档，
+// 而任何显式覆盖都不会被档位悄悄改掉。
 func ResolveSubAgentModel(cfg *Config, parentKind string, sub SubAgentConfig) ResolvedModelSettings {
 	resolved := ResolveAgentModel(cfg, parentKind)
+	tierOverride := AgentModelOverride{}
+	if parentKind == AgentKindIDE && cfg != nil {
+		tierOverride = writingComputeTierOverride(cfg.WritingComputeTier, sub.ComputeRole, cfg.WritingComputeFastProfileID)
+	}
 	override := sub.Model
 	profileOverride := AgentModelSettings{Default: AgentModelOverride{
 		ProfileID:       resolved.ProfileID,
@@ -207,7 +224,9 @@ func ResolveSubAgentModel(cfg *Config, parentKind string, sub SubAgentConfig) Re
 	}}
 	if cfg != nil {
 		tmp := *cfg
-		tmp.AgentModels = MergeAgentModelSettings(profileOverride, AgentModelSettings{Default: override})
+		merged := MergeAgentModelSettings(profileOverride, AgentModelSettings{Default: tierOverride})
+		merged = MergeAgentModelSettings(merged, AgentModelSettings{Default: override})
+		tmp.AgentModels = merged
 		resolved = ResolveAgentModel(&tmp, "")
 	}
 	return resolved
@@ -248,6 +267,9 @@ func mergeSubAgent(parent, child SubAgentConfig) SubAgentConfig {
 	}
 	if child.Parents != nil {
 		out.Parents = child.Parents
+	}
+	if child.ComputeRole != "" {
+		out.ComputeRole = child.ComputeRole
 	}
 	out.Model = mergeAgentModelOverride(out.Model, child.Model)
 	out.Tools = mergeAgentToolOverride(out.Tools, child.Tools)
