@@ -17,6 +17,8 @@ func TestStreamEncoderMapsAgentEventsToUIStream(t *testing.T) {
 		{Type: "thinking", Data: map[string]any{
 			"content":            "分析",
 			"run_id":             "run-1",
+			"model_profile_id":   "default",
+			"model_name":         "deepseek-v4-pro",
 			"created_at":         "2026-07-08T12:00:00Z",
 			"display_role":       "thinking",
 			"turn_id":            "turn-1",
@@ -101,6 +103,10 @@ func TestStreamEncoderMapsAgentEventsToUIStream(t *testing.T) {
 	assertChunk(t, chunks, DataTypeRuleRoll, "id", "roll-1")
 	assertChunk(t, chunks, "tool-input-available", "toolCallId", "tool-1")
 	assertStartMetadata(t, chunks[0])
+	agentMetadata := chunks[1]["providerMetadata"].(map[string]any)["agent"].(map[string]any)
+	if agentMetadata["model_profile_id"] != "default" || agentMetadata["model_name"] != "deepseek-v4-pro" {
+		t.Fatalf("resolved model metadata missing from stream: %#v", agentMetadata)
+	}
 }
 
 func parseUIStreamChunks(t *testing.T, raw string) ([]map[string]any, bool) {

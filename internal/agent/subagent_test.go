@@ -347,6 +347,8 @@ func TestDisplayRecorderPersistsSubAgentAssistantChunks(t *testing.T) {
 		RunID:             "run-1",
 		AgentName:         "researcher",
 		RootAgentName:     "DenovaAgent",
+		ModelProfileID:    "flash",
+		ModelName:         "deepseek-v4-flash",
 		RunPath:           []string{"DenovaAgent", "researcher"},
 		SubAgent:          true,
 		SubAgentSessionID: "run-1-subagent-01-researcher",
@@ -365,6 +367,9 @@ func TestDisplayRecorderPersistsSubAgentAssistantChunks(t *testing.T) {
 	}
 	if !event.SubAgent || event.SubAgentSessionID != "run-1-subagent-01-researcher" || event.SubAgentType != "researcher" {
 		t.Fatalf("subagent metadata missing: %#v", event)
+	}
+	if event.ModelProfileID != "flash" || event.ModelName != "deepseek-v4-flash" {
+		t.Fatalf("subagent model metadata missing: %#v", event)
 	}
 }
 

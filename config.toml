@@ -96,7 +96,7 @@ default_output_format = "png"
 # 可以在 Agents 页像自定义 SubAgent 一样改名、改提示词、限制工具或关闭。
 # parents = ["ide"] 表示只供写作 Agent 使用。
 # compute_role 标注该阶段的认知负载类别（prose 正文 / reasoning 推理 / mechanical 检查），
-# 供写作算力档位按类整体切换模型与思考开关；显式 [sub_agents.model] 覆盖仍优先于档位。
+# 供 Auto 档位按类整体切换模型与思考开关；显式 [sub_agents.model] 覆盖仅在 Auto 模式优先。
 [[sub_agents]]
 id = "context-planner"
 name = "上下文规划"
@@ -222,11 +222,12 @@ model_max_retries = 5
 plan_mode_default = false
 # 写作 Agent 默认叙事编排 ID（当前工作区级配置，字段名沿用 ide_story_teller_id）
 ide_story_teller_id = "classic"
-# 写作算力档位：控制写作管线各阶段 SubAgent 的模型与思考强度。
-#   quality  = 全部阶段用 pro + 思考（质量优先，等价历史行为）
-#   balanced = 正文(writer/fixer)用 pro，推理/检查阶段下放到 flash（默认，平衡质量与成本）
-#   speed    = 全部阶段用 flash，仅正文保留思考（速度优先）
-# 显式为某个 SubAgent 配置 [sub_agents.model] 时，其覆盖优先于档位。
+# 写作模型模式：与输入框右下角统一选择器同步。
+#   manual   = 指定模型；主 Agent 与全部写作 SubAgent 使用 agent_models.ide 选择的同一模型
+#   quality  = Auto-质量优先；全部阶段用主模型 + 思考
+#   balanced = Auto-平衡；正文用主模型，推理/检查阶段下放到 flash（默认）
+#   speed    = Auto-速度优先；全部阶段用 flash，仅正文保留思考
+# [sub_agents.model] 高级覆盖只在 Auto 档位生效；manual 会强制整条写作管线统一模型。
 writing_compute_tier = "balanced"
 # 档位快速阶段（balanced/speed 的推理/检查阶段）引用的模型 profile id，默认 "flash"。
 # 可改成任意已配置 profile 的 id，把这些阶段下放到你选的快速模型；该 profile 不存在时

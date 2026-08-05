@@ -12,6 +12,8 @@ type agentEventMetadata struct {
 	RunID             string
 	AgentName         string
 	RootAgentName     string
+	ModelProfileID    string
+	ModelName         string
 	RunPath           []string
 	SubAgent          bool
 	SubAgentSessionID string
@@ -51,6 +53,12 @@ func metadataForAgentEvent(event *adk.AgentEvent, rootAgentName string) agentEve
 		meta.SubAgentType = meta.AgentName
 	}
 	return meta
+}
+
+func (m agentEventMetadata) withModelIdentity(identity RunModelIdentity) agentEventMetadata {
+	m.ModelProfileID = strings.TrimSpace(identity.ProfileID)
+	m.ModelName = strings.TrimSpace(identity.ModelName)
+	return m
 }
 
 type subAgentSessionTracker struct {
@@ -147,6 +155,12 @@ func (m agentEventMetadata) appendTo(data map[string]interface{}) map[string]int
 	if m.RootAgentName != "" {
 		data["root_agent_name"] = m.RootAgentName
 	}
+	if m.ModelProfileID != "" {
+		data["model_profile_id"] = m.ModelProfileID
+	}
+	if m.ModelName != "" {
+		data["model_name"] = m.ModelName
+	}
 	if len(m.RunPath) > 0 {
 		data["run_path"] = append([]string(nil), m.RunPath...)
 	}
@@ -168,6 +182,8 @@ func eventMetadataFromData(data interface{}) agentEventMetadata {
 		meta.RunID = typed["run_id"]
 		meta.AgentName = typed["agent_name"]
 		meta.RootAgentName = typed["root_agent_name"]
+		meta.ModelProfileID = typed["model_profile_id"]
+		meta.ModelName = typed["model_name"]
 		meta.SubAgentSessionID = typed["subagent_session_id"]
 		meta.SubAgentType = typed["subagent_type"]
 		meta.SubAgent = strings.EqualFold(typed["subagent"], "true")
@@ -176,6 +192,8 @@ func eventMetadataFromData(data interface{}) agentEventMetadata {
 		meta.RunID = eventDataString(typed, "run_id")
 		meta.AgentName = eventDataString(typed, "agent_name")
 		meta.RootAgentName = eventDataString(typed, "root_agent_name")
+		meta.ModelProfileID = eventDataString(typed, "model_profile_id")
+		meta.ModelName = eventDataString(typed, "model_name")
 		meta.SubAgentSessionID = eventDataString(typed, "subagent_session_id")
 		meta.SubAgentType = eventDataString(typed, "subagent_type")
 		meta.SubAgent = eventDataBool(typed, "subagent")
@@ -193,6 +211,8 @@ func (m agentEventMetadata) sameSource(other agentEventMetadata) bool {
 	return m.RunID == other.RunID &&
 		m.AgentName == other.AgentName &&
 		m.RootAgentName == other.RootAgentName &&
+		m.ModelProfileID == other.ModelProfileID &&
+		m.ModelName == other.ModelName &&
 		m.SubAgent == other.SubAgent &&
 		m.SubAgentSessionID == other.SubAgentSessionID &&
 		strings.Join(m.RunPath, "\x00") == strings.Join(other.RunPath, "\x00")

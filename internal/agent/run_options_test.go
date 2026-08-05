@@ -3,6 +3,8 @@ package agent
 import (
 	"strings"
 	"testing"
+
+	"denova/config"
 )
 
 func TestRunOptionsCheckpointIDPrefersSession(t *testing.T) {
@@ -57,6 +59,48 @@ func TestRunOptionsIdleTimeoutNegativeDisablesTimeout(t *testing.T) {
 	options := RunOptions{IdleTimeout: -1}.normalized("")
 	if options.IdleTimeout != 0 {
 		t.Fatalf("idle timeout = %s, want disabled zero duration", options.IdleTimeout)
+	}
+}
+
+func TestResolveRunModelIdentitiesUsesResolvedParentAndComputeTierModels(t *testing.T) {
+	cfg := &config.Config{
+		OpenAIModel: "pro-model",
+		ModelProfiles: []config.ModelProfileSettings{
+			{ID: "default", OpenAIModel: "pro-model"},
+			{ID: "flash", OpenAIModel: "flash-model"},
+		},
+		AgentModels: config.AgentModelSettings{
+			IDE: config.AgentModelOverride{ProfileID: "default"},
+		},
+		WritingComputeTier:          config.WritingComputeTierBalanced,
+		WritingComputeFastProfileID: "flash",
+		SubAgents: []config.SubAgentConfig{
+			{
+				ID:           "writer",
+				Description:  "writes prose",
+				SystemPrompt: "write prose",
+				Parents:      []string{config.AgentKindIDE},
+				ComputeRole:  config.ComputeRoleProse,
+			},
+			{
+				ID:           "reviewer",
+				Description:  "reviews prose",
+				SystemPrompt: "review prose",
+				Parents:      []string{config.AgentKindIDE},
+				ComputeRole:  config.ComputeRoleReasoning,
+			},
+		},
+	}
+
+	identities := ResolveRunModelIdentities(cfg, config.AgentKindIDE)
+	if got := identities["DenovaAgent"]; got.ProfileID != "default" || got.ModelName != "pro-model" {
+		t.Fatalf("root identity = %#v", got)
+	}
+	if got := identities["writer"]; got.ProfileID != "default" || got.ModelName != "pro-model" {
+		t.Fatalf("writer identity = %#v", got)
+	}
+	if got := identities["reviewer"]; got.ProfileID != "flash" || got.ModelName != "flash-model" {
+		t.Fatalf("reviewer identity = %#v", got)
 	}
 }
 

@@ -99,11 +99,13 @@ func TestAssistantMessageMetadataPersistsRunID(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := sess.AppendWithMetadata(schema.AssistantMessage("已完成", nil), MessageMetadata{
-		RunID:         "run-1",
-		AgentKind:     "ide",
-		AgentName:     "DenovaAgent",
-		RootAgentName: "DenovaAgent",
-		RunPath:       []string{"DenovaAgent"},
+		RunID:          "run-1",
+		AgentKind:      "ide",
+		AgentName:      "DenovaAgent",
+		RootAgentName:  "DenovaAgent",
+		ModelProfileID: "default",
+		ModelName:      "deepseek-v4-pro",
+		RunPath:        []string{"DenovaAgent"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +123,8 @@ func TestAssistantMessageMetadataPersistsRunID(t *testing.T) {
 		t.Fatalf("history entries = %d, want 2: %#v", len(history), history)
 	}
 	assistant := history[1]
-	if assistant.Role != "assistant" || assistant.RunID != "run-1" || assistant.AgentKind != "ide" || assistant.AgentName != "DenovaAgent" || len(assistant.RunPath) != 1 {
+	if assistant.Role != "assistant" || assistant.RunID != "run-1" || assistant.AgentKind != "ide" || assistant.AgentName != "DenovaAgent" ||
+		assistant.ModelProfileID != "default" || assistant.ModelName != "deepseek-v4-pro" || len(assistant.RunPath) != 1 {
 		t.Fatalf("assistant metadata was not persisted: %#v", assistant)
 	}
 	effective := reloaded.GetEffectiveMessages()

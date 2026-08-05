@@ -35,6 +35,22 @@ func TestResolveSubAgentModelQualityTierKeepsProEverywhere(t *testing.T) {
 	}
 }
 
+func TestResolveSubAgentModelManualTierKeepsSelectedModelEverywhere(t *testing.T) {
+	cfg := tierTestConfig(WritingComputeTierManual)
+	cfg.AgentModels.IDE.ProfileID = "flash"
+	for _, role := range []ComputeRole{ComputeRoleProse, ComputeRoleReasoning, ComputeRoleMechanical} {
+		sub := subAgent("s", role)
+		sub.Model = AgentModelOverride{ProfileID: "default", EnableThinking: boolPtr(false)}
+		resolved := ResolveSubAgentModel(cfg, AgentKindIDE, sub)
+		if resolved.OpenAIModel != "deepseek-v4-flash" {
+			t.Fatalf("manual role=%s model = %q, want selected flash model", role, resolved.OpenAIModel)
+		}
+		if resolved.EnableThinking == nil || !*resolved.EnableThinking {
+			t.Fatalf("manual role=%s should inherit selected model thinking setting", role)
+		}
+	}
+}
+
 func TestResolveSubAgentModelBalancedTierMapsByRole(t *testing.T) {
 	cfg := tierTestConfig(WritingComputeTierBalanced)
 
@@ -116,7 +132,8 @@ func TestResolveSubAgentModelFallsBackToProWhenFlashMissing(t *testing.T) {
 	}
 	if resolved.ProfileID != "default" {
 		t.Fatalf("missing flash should fall back to default profile, got %q", resolved.ProfileID)
-	}}
+	}
+}
 
 func TestResolveSubAgentModelEmptyRoleFullyInherits(t *testing.T) {
 	cfg := tierTestConfig(WritingComputeTierSpeed)
@@ -191,6 +208,9 @@ func TestNormalizeWritingComputeTierDefaultsToBalanced(t *testing.T) {
 	if got := NormalizeWritingComputeTier(WritingComputeTierSpeed); got != WritingComputeTierSpeed {
 		t.Fatalf("valid tier should pass through, got %q", got)
 	}
+	if got := NormalizeWritingComputeTier(WritingComputeTierManual); got != WritingComputeTierManual {
+		t.Fatalf("manual tier should pass through, got %q", got)
+	}
 }
 
 func TestWritingComputeTierRowsExposeStageMapping(t *testing.T) {
@@ -234,5 +254,8 @@ func TestWritingComputeTierLayeringOverridesAndSanitizes(t *testing.T) {
 	}
 	if got := sanitizeWritingComputeTierLayer(WritingComputeTierQuality); got != WritingComputeTierQuality {
 		t.Fatalf("valid tier layer should pass through, got %q", got)
+	}
+	if got := sanitizeWritingComputeTierLayer(WritingComputeTierManual); got != WritingComputeTierManual {
+		t.Fatalf("manual tier layer should pass through, got %q", got)
 	}
 }

@@ -11,7 +11,7 @@ func TestMessagesFromHistoryConvertsLegacyEntries(t *testing.T) {
 	createdAt := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
 	entries := []session.HistoryEntry{
 		{ID: "user-1", Role: "user", Content: "你好", CreatedAt: createdAt, UserReferences: []session.UserMessageReference{{Kind: "file", Label: "chapters/ch01.md"}}},
-		{ID: "assistant-1", Role: "assistant", Content: "回复", RunID: "run-1"},
+		{ID: "assistant-1", Role: "assistant", Content: "回复", RunID: "run-1", ModelProfileID: "default", ModelName: "deepseek-v4-pro"},
 		{ID: "thinking-1", Role: "thinking", Content: "思考"},
 		{ID: "tool-1", Role: "tool_call", Name: "read_file", Args: `{"path":"a.md"}`, Status: "success", Result: "ok"},
 		{ID: "tool-result-1", Role: "tool_result", Name: "read_file", Content: "ok"},
@@ -48,6 +48,9 @@ func TestMessagesFromHistoryConvertsLegacyEntries(t *testing.T) {
 
 	if messages[1].Metadata["run_id"] != "run-1" {
 		t.Fatalf("expected run metadata to be preserved, got %#v", messages[1].Metadata)
+	}
+	if messages[1].Metadata["model_profile_id"] != "default" || messages[1].Metadata["model_name"] != "deepseek-v4-pro" {
+		t.Fatalf("expected resolved model metadata to be preserved, got %#v", messages[1].Metadata)
 	}
 	userReferences, ok := messages[0].Metadata["user_references"].([]session.UserMessageReference)
 	if !ok || len(userReferences) != 1 || userReferences[0].Label != "chapters/ch01.md" {

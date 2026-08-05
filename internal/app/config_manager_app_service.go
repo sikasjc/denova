@@ -84,6 +84,7 @@ func (s *ConfigManagerAppService) StartTask(ctx context.Context, req ConfigManag
 			LoreReferences: req.References,
 		}, agent.RunOptions{
 			AgentKind:          agent.AgentKindConfigManager,
+			ModelIdentities:    agent.ResolveRunModelIdentities(&runtimeCfg, agent.AgentKindConfigManager),
 			TaskID:             task.ID(),
 			SessionID:          sess.ID,
 			Workspace:          workspace,

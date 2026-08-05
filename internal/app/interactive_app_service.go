@@ -887,6 +887,7 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 		}
 		chatService.RunWithOptions(ctx, runner, conversation, bookService, req, agent.RunOptions{
 			AgentKind:          agent.AgentKindInteractiveStory,
+			ModelIdentities:    agent.ResolveRunModelIdentities(&runtimeCfg, agent.AgentKindInteractiveStory),
 			TaskID:             task.ID(),
 			StoryID:            storyID,
 			BranchID:           conversation.branchID,

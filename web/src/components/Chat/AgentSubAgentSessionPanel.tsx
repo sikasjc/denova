@@ -31,6 +31,7 @@ export function AgentSubAgentSessionPanel({ messages, sessionKey, onClose, highl
   )
   const first = sessionViews[0]
   const name = first?.metadata.agent_name || first?.metadata.subagent_type || t('chat.subagent.label')
+  const modelName = first?.metadata.model_name || first?.metadata.model_profile_id || ''
   const running = sessionViews.some((view) => view.streaming)
   const scrollLock = useVirtuosoBottomLock({
     resetKey: sessionKey,
@@ -60,7 +61,9 @@ export function AgentSubAgentSessionPanel({ messages, sessionKey, onClose, highl
         </span>
         <div className="min-w-0 flex-1">
           <div className="truncate text-xs font-medium text-[var(--nova-text)]">{t('chat.subagent.sessionTitle', { name })}</div>
-          <div className="truncate text-[10px] text-[var(--nova-text-faint)]">{running ? t('chat.subagent.status.streaming') : t('chat.subagent.status.done')}</div>
+          <div className="truncate text-[10px] text-[var(--nova-text-faint)]">
+            {[running ? t('chat.subagent.status.streaming') : t('chat.subagent.status.done'), modelName].filter(Boolean).join(' · ')}
+          </div>
         </div>
         <button
           type="button"

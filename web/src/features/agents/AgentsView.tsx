@@ -62,6 +62,15 @@ export function AgentsView({ onClose }: { onClose?: () => void }) {
   const effective = layered?.effective ?? {}
   const selected = AGENTS.find((agent) => agent.key === activeAgent) ?? AGENTS[0]
   const profileOptions = useMemo(() => buildProfileOptions(draft, effective, t), [draft, effective, t])
+  const profileModelNames = useMemo(() => {
+    const profiles = modelProfilesWithDefault(effective)
+    const defaultModelName = profiles.find((profile) => modelProfileID(profile) === 'default')?.openai_model?.trim() || ''
+    return Object.fromEntries(
+      profiles
+        .map((profile) => [modelProfileID(profile), profile.openai_model?.trim() || defaultModelName || modelProfileLabel(profile)] as const)
+        .filter(([id]) => Boolean(id)),
+    )
+  }, [effective])
   const modelValue = draft.agent_models?.[activeAgent] ?? {}
   const inheritedModel = mergeAgentModelOverride(effective.agent_models?.default ?? {}, effective.agent_models?.[activeAgent] ?? {})
   const promptValue = draft.agent_prompts?.[activeAgent] ?? {}
@@ -332,6 +341,8 @@ export function AgentsView({ onClose }: { onClose?: () => void }) {
                           tier={computeTier}
                           tierRows={computeTierRows}
                           fastProfileId={computeFastProfileId}
+                          mainProfileId={modelValue.profile_id?.trim() || inheritedModel.profile_id?.trim() || 'default'}
+                          profileModelNames={profileModelNames}
                           profiles={profileOptions}
                           onChange={setComputeTier}
                           onFastProfileChange={setComputeFastProfile}
@@ -786,10 +797,12 @@ function toolRowsForAgent(agent: VisibleAgentKey) {
   return TOOL_ROWS.filter((tool) => tool.key !== 'agent_config_read' && tool.key !== 'agent_config_write')
 }
 
-function AgentComputeTierSection({ tier, tierRows, fastProfileId, profiles, onChange, onFastProfileChange }: {
+function AgentComputeTierSection({ tier, tierRows, fastProfileId, mainProfileId, profileModelNames, profiles, onChange, onFastProfileChange }: {
   tier: string
   tierRows: WritingComputeTierRow[]
   fastProfileId: string
+  mainProfileId: string
+  profileModelNames: Record<string, string>
   profiles: Array<{ id: string; label: string }>
   onChange: (tier: string) => void
   onFastProfileChange: (profileID: string) => void
@@ -797,7 +810,7 @@ function AgentComputeTierSection({ tier, tierRows, fastProfileId, profiles, onCh
   const { t } = useTranslation()
   const normalized = normalizeWritingComputeTier(tier)
   const roles = tierRoleRows(tierRows, normalized)
-  const profileLabel = (id: string) => profiles.find((profile) => profile.id === id)?.label ?? id
+  const profileModelName = (id: string) => profileModelNames[id] || id
   return (
     <section className="flex flex-col gap-3 border-b border-[var(--nova-border)] pb-5">
       <SectionTitle icon={Cpu} title={t('agents.computeTier.title')} />
@@ -837,7 +850,7 @@ function AgentComputeTierSection({ tier, tierRows, fastProfileId, profiles, onCh
         <div className="grid gap-2 md:grid-cols-3">
           {COMPUTE_ROLES.map((role) => {
             const plan = roles[role]
-            const modelLabel = plan?.profile_id ? profileLabel(plan.profile_id) : t('agents.computeTier.model.pro')
+            const modelLabel = profileModelName(plan?.profile_id || mainProfileId)
             const thinking = plan?.enable_thinking
             const thinkingLabel = thinking === false ? t('agents.computeTier.thinking.off') : t('agents.computeTier.thinking.on')
             return (
@@ -1027,6 +1040,7 @@ function AgentSubAgentSection({ agent, inheritedModel, computeTier, computeTierR
                 agent={agent}
                 subAgent={editingSubAgent.value}
                 inheritedModel={tierAdjustedInheritedModel(agent, inheritedModel, computeTier, computeTierRows, editingSubAgent.value.compute_role)}
+                modelOverridesEnabled={agent !== 'ide' || normalizeWritingComputeTier(computeTier) !== 'manual'}
                 profiles={profiles}
                 onChange={updateEditingSubAgent}
               />
@@ -1103,11 +1117,12 @@ function SubAgentRow({ agent, subAgent, onToggle, onEdit, onDelete }: {
   )
 }
 
-function SubAgentEditor({ id, agent, subAgent, inheritedModel, profiles, onChange }: {
+function SubAgentEditor({ id, agent, subAgent, inheritedModel, modelOverridesEnabled, profiles, onChange }: {
   id: string
   agent: DeepAgentParentKey
   subAgent: SubAgentConfig
   inheritedModel: AgentModelOverride
+  modelOverridesEnabled: boolean
   profiles: Array<{ id: string; label: string }>
   onChange: (id: string, patch: Partial<SubAgentConfig>) => void
 }) {
@@ -1118,7 +1133,7 @@ function SubAgentEditor({ id, agent, subAgent, inheritedModel, profiles, onChang
   const rows = toolRowsForAgent(agent)
   const model = subAgent.model ?? {}
   const hasThinking = model.enable_thinking !== undefined && model.enable_thinking !== null
-  const effectiveThinking = hasThinking ? model.enable_thinking : inheritedModel.enable_thinking
+  const effectiveThinking = modelOverridesEnabled && hasThinking ? model.enable_thinking : inheritedModel.enable_thinking
 
   const setModel = (patch: Partial<AgentModelOverride>) => onChange(id, { model: { ...model, ...patch } })
   const setTool = (key: ToolKey, value: boolean | null) => {
@@ -1150,7 +1165,11 @@ function SubAgentEditor({ id, agent, subAgent, inheritedModel, profiles, onChang
           <Input aria-label={t('agents.subAgents.description')} value={subAgent.description ?? ''} onChange={(e) => onChange(id, { description: e.target.value })} className="h-7 text-xs" />
         </Field>
         <Field label={t('agents.field.modelProfile')}>
-          <Select value={model.profile_id || '__inherit__'} onValueChange={(profileID) => setModel({ profile_id: profileID === '__inherit__' ? '' : profileID })}>
+          <Select
+            value={modelOverridesEnabled ? model.profile_id || '__inherit__' : inheritedModel.profile_id || 'default'}
+            disabled={!modelOverridesEnabled}
+            onValueChange={(profileID) => setModel({ profile_id: profileID === '__inherit__' ? '' : profileID })}
+          >
             <SelectTrigger size="sm" className="w-full" aria-label={t('agents.field.modelProfile')}><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectGroup>
@@ -1179,8 +1198,9 @@ function SubAgentEditor({ id, agent, subAgent, inheritedModel, profiles, onChang
             min={0}
             max={2}
             step={0.1}
-            value={model.temperature ?? ''}
+            value={modelOverridesEnabled ? model.temperature ?? '' : inheritedModel.temperature ?? ''}
             placeholder={t('agents.option.inherit')}
+            disabled={!modelOverridesEnabled}
             onChange={(e) => setModel({ temperature: e.target.value === '' ? null : Number(e.target.value) })}
             className="h-7 text-xs"
           />
@@ -1191,12 +1211,17 @@ function SubAgentEditor({ id, agent, subAgent, inheritedModel, profiles, onChang
             onChange={(checked) => setModel({ enable_thinking: checked })}
             ariaLabel={t('agents.field.thinking')}
             statusLabel={thinkingStatusLabel(t, effectiveThinking)}
-            inherited={!hasThinking}
-            onReset={hasThinking ? () => setModel({ enable_thinking: null }) : undefined}
+            inherited={!modelOverridesEnabled || !hasThinking}
+            disabled={!modelOverridesEnabled}
+            onReset={modelOverridesEnabled && hasThinking ? () => setModel({ enable_thinking: null }) : undefined}
           />
         </Field>
         <Field label={t('agents.field.reasoningEffort')}>
-          <Select value={model.reasoning_effort || '__inherit__'} onValueChange={(effort) => setModel({ reasoning_effort: effort === '__inherit__' ? '' : effort })}>
+          <Select
+            value={modelOverridesEnabled ? model.reasoning_effort || '__inherit__' : inheritedModel.reasoning_effort || '__inherit__'}
+            disabled={!modelOverridesEnabled}
+            onValueChange={(effort) => setModel({ reasoning_effort: effort === '__inherit__' ? '' : effort })}
+          >
             <SelectTrigger size="sm" className="w-full" aria-label={t('agents.field.reasoningEffort')}><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectGroup>
@@ -1210,7 +1235,7 @@ function SubAgentEditor({ id, agent, subAgent, inheritedModel, profiles, onChang
         </Field>
         {agent === 'ide' && (
           <Field label={t('agents.subAgents.computeRole')}>
-            <Select value={subAgent.compute_role || '__none__'} onValueChange={(role) => onChange(id, { compute_role: role === '__none__' ? '' : role })}>
+            <Select disabled={!modelOverridesEnabled} value={subAgent.compute_role || '__none__'} onValueChange={(role) => onChange(id, { compute_role: role === '__none__' ? '' : role })}>
               <SelectTrigger size="sm" className="w-full" aria-label={t('agents.subAgents.computeRole')}><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectGroup>
@@ -1224,6 +1249,11 @@ function SubAgentEditor({ id, agent, subAgent, inheritedModel, profiles, onChang
           </Field>
         )}
       </div>
+      {!modelOverridesEnabled && (
+        <div className="rounded-[var(--nova-radius)] border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-3 py-2 text-[11px] leading-5 text-[var(--nova-text-faint)]">
+          {t('agents.subAgents.manualModelNote')}
+        </div>
+      )}
       <div>
         <div className="mb-1.5 text-[var(--nova-text-muted)]">{t('agents.subAgents.parents')}</div>
         <div className="flex flex-wrap gap-2">
@@ -1385,7 +1415,7 @@ function Field({ label, inherited, onReset, children }: { label: string; inherit
   )
 }
 
-function ToggleSwitch({ checked, onChange, ariaLabel, statusLabel }: { checked: boolean; onChange: (checked: boolean) => void; ariaLabel: string; statusLabel?: string }) {
+function ToggleSwitch({ checked, onChange, ariaLabel, statusLabel, disabled = false }: { checked: boolean; onChange: (checked: boolean) => void; ariaLabel: string; statusLabel?: string; disabled?: boolean }) {
   const { t } = useTranslation()
   const label = statusLabel || (checked ? t('agents.option.on') : t('agents.option.off'))
   const dotClass = statusDotClass(label, checked, t)
@@ -1394,6 +1424,7 @@ function ToggleSwitch({ checked, onChange, ariaLabel, statusLabel }: { checked: 
       <Switch
         checked={checked}
         onCheckedChange={onChange}
+        disabled={disabled}
         aria-label={ariaLabel}
         title={`${ariaLabel}: ${label}`}
       />
@@ -1402,17 +1433,18 @@ function ToggleSwitch({ checked, onChange, ariaLabel, statusLabel }: { checked: 
   )
 }
 
-function SwitchWithInheritance({ checked, onChange, ariaLabel, statusLabel, inherited, onReset }: {
+function SwitchWithInheritance({ checked, onChange, ariaLabel, statusLabel, inherited, disabled = false, onReset }: {
   checked: boolean
   onChange: (checked: boolean) => void
   ariaLabel: string
   statusLabel?: string
   inherited: boolean
+  disabled?: boolean
   onReset?: () => void
 }) {
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5">
-      <ToggleSwitch checked={checked} onChange={onChange} ariaLabel={ariaLabel} statusLabel={statusLabel} />
+      <ToggleSwitch checked={checked} onChange={onChange} ariaLabel={ariaLabel} statusLabel={statusLabel} disabled={disabled} />
       <InheritanceText inherited={inherited} onReset={onReset} />
     </span>
   )
@@ -1653,7 +1685,7 @@ function mergeAgentModelOverride(parent: AgentModelOverride, child: AgentModelOv
 
 // tierAdjustedInheritedModel 计算某个 SubAgent 在"无显式 model 覆盖"时实际继承到的模型：
 // 父 Agent 继承 ⊕ 写作算力档位按 ComputeRole 的调整。这样编辑器里显示的"继承"值与后端
-// ResolveSubAgentModel 的解析结果一致，作者能看清档位对该阶段的影响；显式覆盖仍优先展示。
+// ResolveSubAgentModel 的解析结果一致，作者能看清 Auto 档位对该阶段的影响。
 // 档位只作用于写作父 Agent（ide）。
 function tierAdjustedInheritedModel(
   agent: DeepAgentParentKey,

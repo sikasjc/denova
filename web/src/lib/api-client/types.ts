@@ -39,6 +39,8 @@ export interface ChatMessage {
   agent_kind?: string
   agent_name?: string
   root_agent_name?: string
+  model_profile_id?: string
+  model_name?: string
   run_path?: string[]
   subagent?: boolean
   subagent_session_id?: string

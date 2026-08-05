@@ -396,6 +396,8 @@ func messageMetadataFromData(data map[string]any) map[string]any {
 		"agent_kind",
 		"agent_name",
 		"root_agent_name",
+		"model_profile_id",
+		"model_name",
 		"run_path",
 		"subagent",
 		"subagent_session_id",

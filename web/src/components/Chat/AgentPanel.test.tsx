@@ -92,6 +92,7 @@ describe('AgentPanel', () => {
     expect(screen.getByText('默认叙事')).toBeInTheDocument()
     expect(screen.getByText('写作 Skill')).toBeInTheDocument()
     expect(screen.getByText(/Lite/)).toBeInTheDocument()
+    expect(screen.queryByText('算力档位')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Review' })).not.toBeInTheDocument()
   })
 

@@ -207,6 +207,12 @@ func addMetadataPayload(target map[string]any, entry session.HistoryEntry) {
 	if entry.RootAgentName != "" {
 		target["root_agent_name"] = entry.RootAgentName
 	}
+	if entry.ModelProfileID != "" {
+		target["model_profile_id"] = entry.ModelProfileID
+	}
+	if entry.ModelName != "" {
+		target["model_name"] = entry.ModelName
+	}
 	if len(entry.RunPath) > 0 {
 		target["run_path"] = append([]string(nil), entry.RunPath...)
 	}

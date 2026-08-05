@@ -34,6 +34,8 @@ func sanitizeMessageMetadata(metadata MessageMetadata) MessageMetadata {
 	metadata.AgentKind = strings.TrimSpace(metadata.AgentKind)
 	metadata.AgentName = strings.TrimSpace(metadata.AgentName)
 	metadata.RootAgentName = strings.TrimSpace(metadata.RootAgentName)
+	metadata.ModelProfileID = strings.TrimSpace(metadata.ModelProfileID)
+	metadata.ModelName = strings.TrimSpace(metadata.ModelName)
 	metadata.SubAgentSessionID = strings.TrimSpace(metadata.SubAgentSessionID)
 	metadata.SubAgentType = strings.TrimSpace(metadata.SubAgentType)
 	if len(metadata.RunPath) > 0 {
@@ -173,6 +175,8 @@ func (s *Session) History() []HistoryEntry {
 				AgentKind:         record.messageMetadata.AgentKind,
 				AgentName:         record.messageMetadata.AgentName,
 				RootAgentName:     record.messageMetadata.RootAgentName,
+				ModelProfileID:    record.messageMetadata.ModelProfileID,
+				ModelName:         record.messageMetadata.ModelName,
 				RunPath:           append([]string(nil), record.messageMetadata.RunPath...),
 				SubAgent:          record.messageMetadata.SubAgent,
 				SubAgentSessionID: record.messageMetadata.SubAgentSessionID,
@@ -198,6 +202,8 @@ func (s *Session) History() []HistoryEntry {
 				AgentKind:            record.display.AgentKind,
 				AgentName:            record.display.AgentName,
 				RootAgentName:        record.display.RootAgentName,
+				ModelProfileID:       record.display.ModelProfileID,
+				ModelName:            record.display.ModelName,
 				RunPath:              append([]string(nil), record.display.RunPath...),
 				SubAgent:             record.display.SubAgent,
 				SubAgentSessionID:    record.display.SubAgentSessionID,

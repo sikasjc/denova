@@ -174,6 +174,41 @@ describe('AgentsView', () => {
     expect(within(dialog).getAllByText('继承').length).toBeGreaterThan(0)
   })
 
+  it('disables stale SubAgent model overrides while Specified Model is active', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchSettings).mockResolvedValue(settingsSnapshot({
+      effective: {
+        writing_compute_tier: 'manual',
+        agent_models: {
+          ide: { profile_id: 'default', enable_thinking: true },
+        },
+        sub_agents: [{
+          id: 'reviewer',
+          name: 'Reviewer',
+          description: 'Reviews drafts.',
+          system_prompt: 'Review only.',
+          parents: ['ide'],
+          enabled: true,
+          compute_role: 'reasoning',
+          model: { profile_id: 'flash', enable_thinking: false },
+        }],
+      },
+    }))
+
+    render(<AgentsView />)
+
+    const reviewer = await screen.findByText('Reviewer')
+    const row = reviewer.parentElement?.parentElement?.parentElement
+    expect(row).toBeTruthy()
+    await user.click(within(row as HTMLElement).getByRole('button', { name: '编辑 SubAgent' }))
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText(/当前为“指定模型”模式/)).toBeInTheDocument()
+    expect(within(dialog).getByRole('combobox', { name: '模型配置' })).toBeDisabled()
+    expect(within(dialog).getByRole('switch', { name: '思考开关' })).toBeDisabled()
+    expect(within(dialog).getByRole('combobox', { name: '算力角色' })).toBeDisabled()
+  })
+
   it('adds and edits custom SubAgents in user settings by default', async () => {
     const user = userEvent.setup()
     vi.mocked(fetchSettings).mockResolvedValue(settingsSnapshot({}))

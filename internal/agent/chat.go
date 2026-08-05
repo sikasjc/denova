@@ -235,10 +235,12 @@ func (r *Runtime) Run(
 	}
 
 	assistantMetadata := session.MessageMetadata{
-		RunID:         runID,
-		AgentKind:     options.AgentKind,
-		AgentName:     options.RootAgentName,
-		RootAgentName: options.RootAgentName,
+		RunID:          runID,
+		AgentKind:      options.AgentKind,
+		AgentName:      options.RootAgentName,
+		RootAgentName:  options.RootAgentName,
+		ModelProfileID: options.modelIdentity(options.RootAgentName).ProfileID,
+		ModelName:      options.modelIdentity(options.RootAgentName).ModelName,
 	}
 	if options.RootAgentName != "" {
 		assistantMetadata.RunPath = []string{options.RootAgentName}
@@ -440,7 +442,7 @@ func (r *Runtime) Run(
 			RunID:         runID,
 			AgentName:     options.RootAgentName,
 			RootAgentName: options.RootAgentName,
-		}
+		}.withModelIdentity(options.modelIdentity(options.RootAgentName))
 		if options.RootAgentName != "" {
 			planMeta.RunPath = []string{options.RootAgentName}
 		}
@@ -524,6 +526,7 @@ func (r *Runtime) Run(
 
 		eventMeta := subAgentSessions.decorate(metadataForAgentEvent(event, options.RootAgentName))
 		eventMeta.AgentKind = options.AgentKind
+		eventMeta = eventMeta.withModelIdentity(options.modelIdentity(eventMeta.AgentName))
 		mv := event.Output.MessageOutput
 		if mv.Role == schema.Tool {
 			if mv.Message == nil {

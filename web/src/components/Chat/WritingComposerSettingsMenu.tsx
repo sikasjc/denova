@@ -1,10 +1,8 @@
-import { Cpu, SlidersHorizontal, Sparkles } from 'lucide-react'
+import { SlidersHorizontal, Sparkles } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ImagePreset, Teller } from '@/features/interactive/types'
 import { BUILTIN_WRITING_SKILLS, DEFAULT_WRITING_SKILL, type WritingSkillOption } from '@/hooks/useWritingSkillOptions'
-import { WRITING_COMPUTE_TIERS, normalizeWritingComputeTier } from '@/features/settings/compute-tier'
-import type { WritingComputeTierRow } from '@/features/settings/types'
 import { PersistedSettingsMenuSub } from './PersistedSettingsMenuSub'
 
 interface WritingComposerSettingsMenuProps {
@@ -15,16 +13,12 @@ interface WritingComposerSettingsMenuProps {
   imagePresetID: string
   writingSkills: WritingSkillOption[]
   writingSkill: string
-  computeTier: string
-  computeTierRows: WritingComputeTierRow[]
   savingTeller?: boolean
   savingImagePreset?: boolean
   savingWritingSkill?: boolean
-  savingComputeTier?: boolean
   onTellerChange: (value: string) => void | Promise<unknown>
   onImagePresetChange: (value: string) => void | Promise<unknown>
   onWritingSkillChange: (value: string) => void | Promise<unknown>
-  onComputeTierChange: (value: string) => void | Promise<unknown>
 }
 
 /** Writing-specific menu composed from the generic persisted-setting submenu. */
@@ -36,16 +30,12 @@ export function WritingComposerSettingsMenu({
   imagePresetID,
   writingSkills,
   writingSkill,
-  computeTier,
-  computeTierRows,
   savingTeller,
   savingImagePreset,
   savingWritingSkill,
-  savingComputeTier,
   onTellerChange,
   onImagePresetChange,
   onWritingSkillChange,
-  onComputeTierChange,
 }: WritingComposerSettingsMenuProps) {
   const { t } = useTranslation()
   const selectedTeller = tellers.find((item) => item.id === tellerID) ?? tellers.find((item) => item.id === 'classic') ?? tellers[0]
@@ -64,8 +54,6 @@ export function WritingComposerSettingsMenu({
   const skillLabel = selectedSkill
     ? `${writingSkillLabel(selectedSkill.name, t)} · ${t(`chat.writingSkill.source.${selectedSkill.scope}`)}`
     : writingSkill
-  const selectedTier = normalizeWritingComputeTier(computeTier)
-
   return (
     <>
       {tellers.length > 0 ? (
@@ -108,21 +96,6 @@ export function WritingComposerSettingsMenu({
         emptyLabel={t('chat.writingSkill.empty')}
         onValueChange={onWritingSkillChange}
       />
-      <PersistedSettingsMenuSub
-        icon={Cpu}
-        label={t('chat.computeTier')}
-        title={t('chat.computeTierTitle')}
-        currentLabel={computeTierLabel(selectedTier, t)}
-        value={selectedTier}
-        options={WRITING_COMPUTE_TIERS.map((tier) => ({
-          id: tier,
-          label: computeTierLabel(tier, t),
-          meta: computeTierMeta(tier, computeTierRows, t),
-        }))}
-        saving={savingComputeTier}
-        disabled={!enabled}
-        onValueChange={onComputeTierChange}
-      />
     </>
   )
 }
@@ -143,33 +116,5 @@ function writingSkillLabel(name: string, t: ReturnType<typeof useTranslation>['t
     default:
       return name
   }
-}
-
-function computeTierLabel(tier: string, t: ReturnType<typeof useTranslation>['t']): string {
-  switch (tier) {
-    case 'quality':
-      return t('chat.computeTier.preset.quality')
-    case 'balanced':
-      return t('chat.computeTier.preset.balanced')
-    case 'speed':
-      return t('chat.computeTier.preset.speed')
-    default:
-      return tier
-  }
-}
-
-// computeTierMeta 用后端导出的档位表，为选项生成一行"各阶段模型"提示，例如
-// "正文 pro · 推理 flash · 检查 flash"，让作者一眼看清该档的算力分配。
-function computeTierMeta(tier: string, rows: WritingComputeTierRow[], t: ReturnType<typeof useTranslation>['t']): string {
-  const roles = rows.find((row) => row.id === tier)?.roles
-  if (!roles) return ''
-  const parts: string[] = []
-  for (const role of ['prose', 'reasoning', 'mechanical'] as const) {
-    const entry = roles[role]
-    if (!entry) continue
-    const model = entry.profile_id ? entry.profile_id : t('chat.computeTier.model.pro')
-    parts.push(`${t(`chat.computeTier.role.${role}`)} ${model}`)
-  }
-  return parts.join(' · ')
 }
 

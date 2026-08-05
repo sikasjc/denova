@@ -38,6 +38,22 @@ describe('MessageItem', () => {
     expect(container.querySelector('.chat-agent-message')).toHaveTextContent('直接展示正文')
   })
 
+  it('assistant 消息展示本次实际使用的模型和 profile', () => {
+    render(
+      <MessageItem
+        message={{
+          role: 'assistant',
+          content: '模型输出',
+          model_name: 'deepseek-v4-pro',
+          model_profile_id: 'default',
+        }}
+      />,
+    )
+
+    expect(screen.getByTestId('message-model')).toHaveTextContent('deepseek-v4-pro · default')
+    expect(screen.getByTestId('message-model')).toHaveAttribute('title', '本次输出模型：deepseek-v4-pro · default')
+  })
+
   it('流式 assistant 消息即时渲染常见 Markdown 结构', () => {
     render(<MessageItem message={{ role: 'assistant', content: '# 实时标题\n- 实时条目\n`cmd`', streaming: true }} />)
 

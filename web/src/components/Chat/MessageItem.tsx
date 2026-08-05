@@ -307,6 +307,7 @@ function MessageInlineMeta({ message, content, align, reserveSpace = false, hide
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const formatted = formatMessageHoverTime(message.created_at)
+  const modelLabel = message.role === 'assistant' ? modelDisplayLabel(message) : ''
   const canSwitchVersion = Boolean(onSwitchVersion && versionCount > 1 && versionIndex >= 0)
   const hasMessageAction = !hideActions && Boolean(onEdit || onGenerateInteractiveImage || onRegenerate || canSwitchVersion)
   const showCopyAction = !hideActions && Boolean(content.trim())
@@ -315,7 +316,7 @@ function MessageInlineMeta({ message, content, align, reserveSpace = false, hide
     tooltipSideOffset: messageActionTooltipSideOffset,
     useTooltipProvider: false,
   }
-  if (!formatted && !showCopyAction && !hasMessageAction) {
+  if (!formatted && !modelLabel && !showCopyAction && !hasMessageAction) {
     if (!reserveSpace) return null
     return (
       <div className={`nova-message-meta nova-message-meta-${align} nova-message-meta-spacer`} aria-hidden="true">
@@ -326,6 +327,15 @@ function MessageInlineMeta({ message, content, align, reserveSpace = false, hide
   return (
     <TooltipProvider delayDuration={messageActionTooltipDelayMs} skipDelayDuration={messageActionTooltipSkipDelayMs} disableHoverableContent>
       <div className={`nova-message-meta nova-message-meta-${align}`} aria-label={formatted}>
+        {modelLabel ? (
+          <span
+            className="max-w-52 truncate rounded border border-[var(--nova-border-soft)] px-1.5 font-mono text-[10px] leading-4 text-[var(--nova-text-faint)]"
+            title={t('chat.message.model', { model: modelLabel })}
+            data-testid="message-model"
+          >
+            {modelLabel}
+          </span>
+        ) : null}
         {formatted ? <span className="nova-message-time">{formatted}</span> : null}
         {showCopyAction && (
           <TooltipIconButton
@@ -418,6 +428,13 @@ function MessageInlineMeta({ message, content, align, reserveSpace = false, hide
   )
 }
 
+function modelDisplayLabel(message: ChatMessage): string {
+  const modelName = message.model_name?.trim()
+  const profileID = message.model_profile_id?.trim()
+  if (modelName && profileID && modelName !== profileID) return `${modelName} · ${profileID}`
+  return modelName || profileID || ''
+}
+
 function formatMessageHoverTime(value?: string) {
   if (!value) return ''
   const date = new Date(value)
@@ -478,6 +495,7 @@ function SubAgentOutputWindow({
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const name = message.agent_name || message.subagent_type || t('chat.subagent.label')
+  const modelLabel = modelDisplayLabel(message)
   const preview = buildMarkdownPreview(content, 220)
   const hasContent = Boolean(content.trim())
   const statusLabel = message.streaming ? t('chat.subagent.status.streaming') : t('chat.subagent.status.done')
@@ -512,7 +530,9 @@ function SubAgentOutputWindow({
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium text-[var(--nova-text)]">{t('chat.subagent.outputFrom', { name })}</span>
-            <span className="mt-0.5 block truncate text-[11px] text-[var(--nova-text-faint)]">{statusLabel}</span>
+            <span className="mt-0.5 block truncate text-[11px] text-[var(--nova-text-faint)]">
+              {modelLabel ? `${statusLabel} · ${modelLabel}` : statusLabel}
+            </span>
           </span>
           <span className="shrink-0 rounded border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-1.5 py-0.5 text-[10px] text-[var(--nova-text-muted)]">
             {actionLabel}

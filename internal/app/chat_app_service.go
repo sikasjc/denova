@@ -297,6 +297,7 @@ func (s *ChatAppService) StartTaskWithError(ctx context.Context, req agent.ChatR
 		}
 		runtime.chatService.RunWithOptions(ctx, runner, conversation, runtime.bookService, req, agent.RunOptions{
 			AgentKind:          agent.AgentKindIDE,
+			ModelIdentities:    agent.ResolveRunModelIdentities(&runtime.cfg, agent.AgentKindIDE),
 			TaskID:             task.ID(),
 			SessionID:          runtime.sess.ID,
 			ReviewThreadID:     req.ResolvedReviewFeedback.PrimaryReviewThreadID(),

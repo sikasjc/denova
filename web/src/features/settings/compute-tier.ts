@@ -4,10 +4,12 @@ import type { ComputeRole, Settings, WritingComputeTierRoleRow, WritingComputeTi
 // 档位本身是固定的三档（后端 config.WritingComputeTiers()），因此这里静态列出；
 // 每档下各阶段实际生效的模型/思考来自后端导出的 layered.writing_compute_tiers，
 // 前端不重复档位映射逻辑。
-export const WRITING_COMPUTE_TIERS = ['quality', 'balanced', 'speed'] as const
+export const WRITING_COMPUTE_TIERS = ['manual', 'quality', 'balanced', 'speed'] as const
 export type WritingComputeTier = (typeof WRITING_COMPUTE_TIERS)[number]
 
 export const DEFAULT_WRITING_COMPUTE_TIER: WritingComputeTier = 'balanced'
+export const MANUAL_WRITING_COMPUTE_TIER: WritingComputeTier = 'manual'
+export const AUTO_WRITING_COMPUTE_TIERS = ['balanced', 'quality', 'speed'] as const
 
 // DEFAULT_FAST_MODEL_PROFILE_ID 是档位快速阶段默认引用的 profile id（后端 DefaultFastModelProfileID）。
 export const DEFAULT_FAST_MODEL_PROFILE_ID = 'flash'

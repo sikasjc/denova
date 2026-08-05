@@ -12,6 +12,8 @@ export interface AgentMessageMetadata {
   agent_kind?: string
   agent_name?: string
   root_agent_name?: string
+  model_profile_id?: string
+  model_name?: string
   run_path?: string[]
   subagent?: boolean
   subagent_session_id?: string
@@ -286,6 +288,8 @@ function agentMetadataFromProvider(metadata: unknown): AgentMessageMetadata {
     agent_kind: readString(raw.agent_kind) || undefined,
     agent_name: readString(raw.agent_name) || undefined,
     root_agent_name: readString(raw.root_agent_name) || undefined,
+    model_profile_id: readString(raw.model_profile_id) || undefined,
+    model_name: readString(raw.model_name) || undefined,
     subagent: typeof raw.subagent === 'boolean' ? raw.subagent : undefined,
     subagent_session_id: readString(raw.subagent_session_id) || undefined,
     subagent_type: readString(raw.subagent_type) || undefined,

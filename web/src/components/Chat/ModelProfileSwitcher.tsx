@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { fetchSettings, updateUserSettings } from '@/features/settings/api'
 import type { AgentModelOverride, LayeredSettings, ModelProfileSettings, Settings } from '@/features/settings/types'
+import { AUTO_WRITING_COMPUTE_TIERS, MANUAL_WRITING_COMPUTE_TIER, normalizeWritingComputeTier, type WritingComputeTier } from '@/features/settings/compute-tier'
 import { modelProfileID, modelProfileLabel, modelProfilesWithDefault } from '@/features/settings/model-profiles'
 import type { VisibleAgentKey } from '@/features/agents/agent-registry'
 
@@ -28,7 +29,7 @@ interface ModelProfileOption {
 type ReasoningEffort = '' | 'low' | 'medium' | 'high'
 
 interface SavingSelection {
-  kind: 'profile' | 'effort'
+  kind: 'profile' | 'tier' | 'effort'
   value: string
 }
 
@@ -50,10 +51,11 @@ export function ModelProfileSwitcher({ agentKey, workspace, disabled = false }: 
           title={selector.t('chat.modelProfile.switch', { model: selector.currentSelectionLabel })}
           data-model-profile-trigger="true"
           data-current-model={selector.currentModelLabel}
+          data-current-compute-tier={selector.currentComputeTier}
           data-current-reasoning-effort={selector.currentReasoningEffort}
         >
-          <span className="min-w-0 truncate">{selector.settings ? selector.currentModelLabel : selector.t('chat.modelProfile.loading')}</span>
-          {selector.currentReasoningEffortLabel ? (
+          <span className="min-w-0 truncate">{selector.settings ? selector.currentDisplayLabel : selector.t('chat.modelProfile.loading')}</span>
+          {selector.currentComputeTier === MANUAL_WRITING_COMPUTE_TIER && selector.currentReasoningEffortLabel ? (
             <span className="shrink-0 font-normal text-[var(--nova-text-faint)]">{selector.currentReasoningEffortLabel}</span>
           ) : null}
           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[var(--nova-text-faint)] transition-transform group-data-[state=open]:rotate-180" />
@@ -76,16 +78,20 @@ interface ModelProfileSelectorInput extends ModelProfileSwitcherProps {}
 interface ModelProfileSelector {
   t: (key: string, options?: Record<string, unknown>) => string
   enabled: boolean
+  supportsComputeTier: boolean
   settings: LayeredSettings | null
   options: ModelProfileOption[]
   currentProfile: string
   currentModelLabel: string
+  currentComputeTier: WritingComputeTier
+  currentDisplayLabel: string
   currentReasoningEffort: ReasoningEffort
   currentReasoningEffortLabel: string
   currentSelectionLabel: string
   savingSelection: SavingSelection | null
   error: string | null
   selectProfile: (profileID: string) => Promise<void>
+  selectComputeTier: (tier: WritingComputeTier) => Promise<void>
   selectReasoningEffort: (effort: ReasoningEffort) => Promise<void>
 }
 
@@ -96,6 +102,7 @@ function useModelProfileSelector({ agentKey, workspace, disabled = false }: Mode
   const [error, setError] = useState<string | null>(null)
   const savingRef = useRef(false)
   const enabled = Boolean(agentKey && workspace)
+  const supportsComputeTier = agentKey === 'ide'
 
   const load = useCallback(() => {
     if (!enabled) {
@@ -132,6 +139,9 @@ function useModelProfileSelector({ agentKey, workspace, disabled = false }: Mode
     [agentKey, options, settings?.effective],
   )
   const currentModelLabel = options.find((option) => option.id === currentProfile)?.modelLabel || currentProfile
+  const currentComputeTier = agentKey === 'ide'
+    ? normalizeWritingComputeTier(settings?.effective.writing_compute_tier)
+    : MANUAL_WRITING_COMPUTE_TIER
   const currentReasoningEffort = useMemo(
     () => agentKey ? resolveCurrentReasoningEffort(settings?.effective ?? {}, agentKey) : '',
     [agentKey, settings?.effective],
@@ -139,7 +149,13 @@ function useModelProfileSelector({ agentKey, workspace, disabled = false }: Mode
   const currentReasoningEffortLabel = currentReasoningEffort
     ? t(`chat.modelProfile.reasoning.${currentReasoningEffort}`)
     : ''
-  const currentSelectionLabel = [currentModelLabel, currentReasoningEffortLabel].filter(Boolean).join(' ')
+  const currentDisplayLabel = currentComputeTier === MANUAL_WRITING_COMPUTE_TIER
+    ? currentModelLabel
+    : t(`chat.modelProfile.auto.${currentComputeTier}`)
+  const currentSelectionLabel = [
+    currentDisplayLabel,
+    currentComputeTier === MANUAL_WRITING_COMPUTE_TIER ? currentReasoningEffortLabel : '',
+  ].filter(Boolean).join(' ')
 
   const saveAgentModelSelection = async (
     selection: SavingSelection,
@@ -167,10 +183,21 @@ function useModelProfileSelector({ agentKey, workspace, disabled = false }: Mode
   }
 
   const selectProfile = async (profileID: string) => {
-    if (!agentKey || profileID === currentProfile) return
+    if (!agentKey || (profileID === currentProfile && currentComputeTier === MANUAL_WRITING_COMPUTE_TIER)) return
     await saveAgentModelSelection(
       { kind: 'profile', value: profileID },
-      (latest) => withAgentModelSelection(latest, agentKey, { profileID }),
+      (latest) => withAgentModelSelection(latest, agentKey, {
+        profileID,
+        writingComputeTier: agentKey === 'ide' ? MANUAL_WRITING_COMPUTE_TIER : undefined,
+      }),
+    )
+  }
+
+  const selectComputeTier = async (tier: WritingComputeTier) => {
+    if (agentKey !== 'ide' || tier === currentComputeTier || tier === MANUAL_WRITING_COMPUTE_TIER) return
+    await saveAgentModelSelection(
+      { kind: 'tier', value: tier },
+      (latest) => withAgentModelSelection(latest, agentKey, { writingComputeTier: tier }),
     )
   }
 
@@ -185,16 +212,20 @@ function useModelProfileSelector({ agentKey, workspace, disabled = false }: Mode
   return {
     t,
     enabled,
+    supportsComputeTier,
     settings,
     options,
     currentProfile,
     currentModelLabel,
+    currentComputeTier,
+    currentDisplayLabel,
     currentReasoningEffort,
     currentReasoningEffortLabel,
     currentSelectionLabel,
     savingSelection,
     error,
     selectProfile,
+    selectComputeTier,
     selectReasoningEffort,
   }
 }
@@ -202,18 +233,21 @@ function useModelProfileSelector({ agentKey, workspace, disabled = false }: Mode
 function ModelProfileOptions({ selector }: { selector: ModelProfileSelector }) {
   const {
     t,
+    supportsComputeTier,
     options,
     currentProfile,
+    currentComputeTier,
     currentReasoningEffort,
     savingSelection,
     error,
     selectProfile,
+    selectComputeTier,
     selectReasoningEffort,
   } = selector
   return (
     <>
       <div className="px-1.5 pb-1 pt-0.5 text-[10px] font-medium text-[var(--nova-text-faint)]">
-        {t('chat.modelProfile.modelSection')}
+        {t(supportsComputeTier ? 'chat.modelProfile.specifiedModelSection' : 'chat.modelProfile.modelSection')}
       </div>
       {options.map((option) => (
         <DropdownMenuItem
@@ -224,7 +258,7 @@ function ModelProfileOptions({ selector }: { selector: ModelProfileSelector }) {
         >
           {savingSelection?.kind === 'profile' && savingSelection.value === option.id
             ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            : <Check className={`h-3.5 w-3.5 ${option.id === currentProfile ? 'opacity-100' : 'opacity-0'}`} />}
+            : <Check className={`h-3.5 w-3.5 ${currentComputeTier === MANUAL_WRITING_COMPUTE_TIER && option.id === currentProfile ? 'opacity-100' : 'opacity-0'}`} />}
           <span className="min-w-0 flex-1 truncate">{option.label}</span>
         </DropdownMenuItem>
       ))}
@@ -232,6 +266,24 @@ function ModelProfileOptions({ selector }: { selector: ModelProfileSelector }) {
         <DropdownMenuItem disabled className="text-xs">
           {t('chat.modelProfile.empty')}
         </DropdownMenuItem>
+      ) : null}
+      {supportsComputeTier ? (
+        <>
+          <DropdownMenuSeparator className="bg-[var(--nova-border-soft)]" />
+          {AUTO_WRITING_COMPUTE_TIERS.map((tier) => (
+            <DropdownMenuItem
+              key={tier}
+              disabled={Boolean(savingSelection)}
+              onSelect={() => void selectComputeTier(tier)}
+              className="cursor-pointer py-1.5 text-xs focus:bg-[var(--nova-active)] focus:text-[var(--nova-text)]"
+            >
+              {savingSelection?.kind === 'tier' && savingSelection.value === tier
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <Check className={`h-3.5 w-3.5 ${tier === currentComputeTier ? 'opacity-100' : 'opacity-0'}`} />}
+              <span className="min-w-0 flex-1 truncate">{t(`chat.modelProfile.auto.${tier}`)}</span>
+            </DropdownMenuItem>
+          ))}
+        </>
       ) : null}
       <DropdownMenuSeparator className="bg-[var(--nova-border-soft)]" />
       <div className="px-1.5 pb-1 pt-0.5 text-[10px] font-medium text-[var(--nova-text-faint)]">
@@ -313,8 +365,15 @@ function mergeAgentModelOverride(parent: AgentModelOverride, child: AgentModelOv
 function withAgentModelSelection(
   settings: Settings,
   agentKey: VisibleAgentKey,
-  selection: { profileID?: string; reasoningEffort?: ReasoningEffort },
+  selection: { profileID?: string; writingComputeTier?: WritingComputeTier; reasoningEffort?: ReasoningEffort },
 ): Settings {
+  const hasModelChange = selection.profileID !== undefined || selection.reasoningEffort !== undefined
+  if (!hasModelChange) {
+    return {
+      ...settings,
+      ...(selection.writingComputeTier ? { writing_compute_tier: selection.writingComputeTier } : {}),
+    }
+  }
   const nextModel = { ...(settings.agent_models?.[agentKey] ?? {}) }
   if (selection.profileID !== undefined) nextModel.profile_id = selection.profileID
   if (selection.reasoningEffort !== undefined) {
@@ -323,6 +382,7 @@ function withAgentModelSelection(
   }
   return {
     ...settings,
+    ...(selection.writingComputeTier ? { writing_compute_tier: selection.writingComputeTier } : {}),
     agent_models: {
       ...(settings.agent_models ?? {}),
       [agentKey]: nextModel,

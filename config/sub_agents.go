@@ -202,15 +202,18 @@ func SubAgentAllowedForParent(sub SubAgentConfig, parentKind string) bool {
 
 // ResolveSubAgentModel 解析一个写作/游戏 SubAgent 的最终模型设置。
 //
-// 解析顺序（后者覆盖前者）：
+// Auto 档位解析顺序（后者覆盖前者）：
 //  1. 父 Agent 继承（parentKind 的已解析模型，如 IDE 默认 pro + 思考）；
 //  2. 写作算力档位按 ComputeRole 的整体调整（仅当 parentKind == ide 时套用）；
-//  3. 该 SubAgent 显式的 sub.Model 覆盖（作者在 Agents 页逐个精细控制，永远优先）。
+//  3. 该 SubAgent 显式的 sub.Model 覆盖（作者在 Agents 页逐个精细控制）。
 //
-// 这样档位是"父继承"与"显式覆盖"之间的一层：作者不动任何 SubAgent 也能一键切档，
-// 而任何显式覆盖都不会被档位悄悄改掉。
+// manual（指定模型）是统一选择器的单模型模式：它直接返回父 Agent 已解析模型并忽略
+// 逐 SubAgent 覆盖，保证主 Agent 与整条写作管线实际使用同一个模型。
 func ResolveSubAgentModel(cfg *Config, parentKind string, sub SubAgentConfig) ResolvedModelSettings {
 	resolved := ResolveAgentModel(cfg, parentKind)
+	if parentKind == AgentKindIDE && cfg != nil && NormalizeWritingComputeTier(cfg.WritingComputeTier) == WritingComputeTierManual {
+		return resolved
+	}
 	tierOverride := AgentModelOverride{}
 	if parentKind == AgentKindIDE && cfg != nil {
 		tierOverride = writingComputeTierOverride(cfg.WritingComputeTier, sub.ComputeRole, cfg.WritingComputeFastProfileID)

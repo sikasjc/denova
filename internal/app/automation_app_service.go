@@ -422,6 +422,7 @@ func (s *AutomationAppService) runAutomation(ctx context.Context, snap *automati
 		Message: s.buildAutomationUserMessage(task, run, writeMode, writeScope),
 	}, agent.RunOptions{
 		AgentKind:           agent.AgentKindAutomation,
+		ModelIdentities:     agent.ResolveRunModelIdentities(&runtimeCfg, agent.AgentKindAutomation),
 		TaskID:              run.ID,
 		SessionID:           run.SessionID,
 		Workspace:           run.Workspace,
@@ -510,6 +511,7 @@ func (s *AutomationAppService) runAutomationFollowUp(ctx context.Context, snap *
 		Message: message,
 	}, agent.RunOptions{
 		AgentKind:           agent.AgentKindAutomation,
+		ModelIdentities:     agent.ResolveRunModelIdentities(&runtimeCfg, agent.AgentKindAutomation),
 		TaskID:              run.ID,
 		SessionID:           run.SessionID,
 		Workspace:           run.Workspace,

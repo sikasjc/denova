@@ -65,6 +65,7 @@ func GenerateInteractiveDirectorWithTools(ctx context.Context, cfg *config.Confi
 	}
 	runOptions := RunOptions{
 		AgentKind:       config.AgentKindInteractiveDirector,
+		ModelIdentities: ResolveRunModelIdentities(cfg, config.AgentKindInteractiveDirector),
 		StoryID:         toolContext.StoryID,
 		BranchID:        toolContext.BranchID,
 		TurnID:          toolContext.TurnID,

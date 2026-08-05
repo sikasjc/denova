@@ -57,6 +57,7 @@ func (s *ImageAppService) GenerateWithAgent(ctx context.Context, req ImageAgentG
 		Message: conversation.message,
 	}, agent.RunOptions{
 		AgentKind:          config.AgentKindImage,
+		ModelIdentities:    agent.ResolveRunModelIdentities(&cfg, config.AgentKindImage),
 		Workspace:          workspace,
 		Mode:               "image",
 		IdleTimeout:        agentIdleTimeout(cfg),

@@ -11,8 +11,6 @@ import type { AgentUIMessage } from '@/lib/agent-ui'
 import { agentSubAgentSessionKey, agentViewContent, buildAgentMessageViews, selectAgentTokenUsageRecords, type AgentMessageView, type AgentPartRef } from '@/lib/agent-message-view'
 import { useSkillCommands } from '@/hooks/useSkillCommands'
 import { DEFAULT_WRITING_SKILL, useWritingSkillOptions } from '@/hooks/useWritingSkillOptions'
-import { useWritingComputeTierRows } from '@/hooks/useWritingComputeTierRows'
-import { DEFAULT_WRITING_COMPUTE_TIER } from '@/features/settings/compute-tier'
 import type { PersistedUserSettingsController } from '@/hooks/usePersistedUserSettings'
 import { AgentChatPane } from './AgentChatPane'
 import { SessionManagementPanel } from './SessionManagementPanel'
@@ -40,7 +38,6 @@ export const WRITING_COMPOSER_SETTING_DEFAULTS = {
   ide_story_teller_id: 'classic',
   ide_image_preset_id: 'game-cg',
   writing_skill_default: DEFAULT_WRITING_SKILL,
-  writing_compute_tier: DEFAULT_WRITING_COMPUTE_TIER,
 } as const
 
 export type WritingComposerSettingsController = PersistedUserSettingsController<typeof WRITING_COMPOSER_SETTING_DEFAULTS>
@@ -170,10 +167,8 @@ export function AgentPanel({
   const ideTellerId = persistedSettings.values.ide_story_teller_id
   const imagePresetId = persistedSettings.values.ide_image_preset_id
   const writingSkill = persistedSettings.values.writing_skill_default
-  const writingComputeTier = persistedSettings.values.writing_compute_tier
   const skillCommands = useSkillCommands({ agentKey: 'ide', workspace, fallbackEnabled: true })
   const writingSkillOptions = useWritingSkillOptions(workspace)
-  const writingComputeTierRows = useWritingComputeTierRows()
   const writingQuickActions = useWritingQuickActions(workspace)
   const changeGroupsQuery = useWorkspaceChangeGroups(activeSessionId ? workspace : '', { sessionID: activeSessionId })
   const tokenUsageMessages = useMemo(
@@ -430,16 +425,12 @@ export function AgentPanel({
         imagePresetID={imagePresetId}
         writingSkills={writingSkillOptions}
         writingSkill={writingSkill}
-        computeTier={writingComputeTier}
-        computeTierRows={writingComputeTierRows}
         savingTeller={persistedSettings.isSaving('ide_story_teller_id')}
         savingImagePreset={persistedSettings.isSaving('ide_image_preset_id')}
         savingWritingSkill={persistedSettings.isSaving('writing_skill_default')}
-        savingComputeTier={persistedSettings.isSaving('writing_compute_tier')}
         onTellerChange={(value) => persistedSettings.persist('ide_story_teller_id', value)}
         onImagePresetChange={(value) => persistedSettings.persist('ide_image_preset_id', value)}
         onWritingSkillChange={(value) => persistedSettings.persist('writing_skill_default', value)}
-        onComputeTierChange={(value) => persistedSettings.persist('writing_compute_tier', value)}
       />
     ),
     onboardingAnchor: 'agent-input',

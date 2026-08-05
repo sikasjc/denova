@@ -4,21 +4,25 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"denova/config"
 )
 
 const (
-	AgentKindUnknown          = "unknown"
-	AgentKindIDE              = "ide"
-	AgentKindInteractiveStory = "interactive_story"
-	AgentKindConfigManager    = "config_manager"
-	AgentKindImage            = "image"
-	AgentKindAutomation       = "automation"
+	AgentKindUnknown             = "unknown"
+	AgentKindIDE                 = "ide"
+	AgentKindInteractiveStory    = "interactive_story"
+	AgentKindInteractiveDirector = "interactive_director"
+	AgentKindConfigManager       = "config_manager"
+	AgentKindImage               = "image"
+	AgentKindAutomation          = "automation"
 )
 
 // RunOptions identifies one Agent run across runtime, trace, and UI surfaces.
 type RunOptions struct {
 	AgentKind              string
 	RootAgentName          string
+	ModelIdentities        map[string]RunModelIdentity
 	TaskID                 string
 	SessionID              string
 	ReviewThreadID         string
@@ -35,6 +39,43 @@ type RunOptions struct {
 	OnUserMessageCommitted func(context.Context) error
 }
 
+// RunModelIdentity is display-only metadata for the resolved model used by one
+// root Agent or configured SubAgent. It never enters the model-visible context.
+type RunModelIdentity struct {
+	ProfileID string
+	ModelName string
+}
+
+// ResolveRunModelIdentities snapshots the exact model resolution used to build
+// a run. Keying by ADK AgentName keeps root and SubAgent stream events aligned
+// with the same config snapshot even if settings change while the run is active.
+func ResolveRunModelIdentities(cfg *config.Config, parentKind string) map[string]RunModelIdentity {
+	if cfg == nil {
+		return nil
+	}
+	identities := map[string]RunModelIdentity{}
+	if rootName := rootAgentNameForKind(parentKind); rootName != "" {
+		identities[rootName] = runModelIdentity(config.ResolveAgentModel(cfg, parentKind))
+	}
+	if !config.IsDeepAgentParentKind(parentKind) {
+		return identities
+	}
+	for _, sub := range config.SanitizeSubAgents(cfg.SubAgents) {
+		if !config.SubAgentAllowedForParent(sub, parentKind) {
+			continue
+		}
+		identities[sub.ID] = runModelIdentity(config.ResolveSubAgentModel(cfg, parentKind, sub))
+	}
+	return identities
+}
+
+func runModelIdentity(resolved config.ResolvedModelSettings) RunModelIdentity {
+	return RunModelIdentity{
+		ProfileID: strings.TrimSpace(resolved.ProfileID),
+		ModelName: strings.TrimSpace(resolved.OpenAIModel),
+	}
+}
+
 func (o RunOptions) normalized(defaultWorkspace string) RunOptions {
 	o.AgentKind = strings.TrimSpace(o.AgentKind)
 	if o.AgentKind == "" {
@@ -43,6 +84,19 @@ func (o RunOptions) normalized(defaultWorkspace string) RunOptions {
 	o.RootAgentName = strings.TrimSpace(o.RootAgentName)
 	if o.RootAgentName == "" {
 		o.RootAgentName = rootAgentNameForKind(o.AgentKind)
+	}
+	if len(o.ModelIdentities) > 0 {
+		identities := make(map[string]RunModelIdentity, len(o.ModelIdentities))
+		for agentName, identity := range o.ModelIdentities {
+			agentName = strings.TrimSpace(agentName)
+			identity.ProfileID = strings.TrimSpace(identity.ProfileID)
+			identity.ModelName = strings.TrimSpace(identity.ModelName)
+			if agentName == "" || (identity.ProfileID == "" && identity.ModelName == "") {
+				continue
+			}
+			identities[agentName] = identity
+		}
+		o.ModelIdentities = identities
 	}
 	o.TaskID = strings.TrimSpace(o.TaskID)
 	o.SessionID = strings.TrimSpace(o.SessionID)
@@ -65,12 +119,24 @@ func (o RunOptions) normalized(defaultWorkspace string) RunOptions {
 	return o
 }
 
+func (o RunOptions) modelIdentity(agentName string) RunModelIdentity {
+	if len(o.ModelIdentities) == 0 {
+		return RunModelIdentity{}
+	}
+	if identity, ok := o.ModelIdentities[strings.TrimSpace(agentName)]; ok {
+		return identity
+	}
+	return o.ModelIdentities[o.RootAgentName]
+}
+
 func rootAgentNameForKind(kind string) string {
 	switch strings.TrimSpace(kind) {
 	case AgentKindIDE:
 		return "DenovaAgent"
 	case AgentKindInteractiveStory:
 		return "DenovaInteractiveStoryAgent"
+	case AgentKindInteractiveDirector:
+		return "DenovaInteractiveDirectorAgent"
 	case AgentKindConfigManager:
 		return "DenovaConfigManagerAgent"
 	case AgentKindImage:

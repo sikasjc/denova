@@ -42,6 +42,8 @@ type HistoryEntry struct {
 	AgentKind            string                 `json:"agent_kind,omitempty"`
 	AgentName            string                 `json:"agent_name,omitempty"`
 	RootAgentName        string                 `json:"root_agent_name,omitempty"`
+	ModelProfileID       string                 `json:"model_profile_id,omitempty"`
+	ModelName            string                 `json:"model_name,omitempty"`
 	RunPath              []string               `json:"run_path,omitempty"`
 	SubAgent             bool                   `json:"subagent,omitempty"`
 	SubAgentSessionID    string                 `json:"subagent_session_id,omitempty"`
@@ -79,6 +81,8 @@ type MessageMetadata struct {
 	AgentKind         string                 `json:"agent_kind,omitempty"`
 	AgentName         string                 `json:"agent_name,omitempty"`
 	RootAgentName     string                 `json:"root_agent_name,omitempty"`
+	ModelProfileID    string                 `json:"model_profile_id,omitempty"`
+	ModelName         string                 `json:"model_name,omitempty"`
 	RunPath           []string               `json:"run_path,omitempty"`
 	SubAgent          bool                   `json:"subagent,omitempty"`
 	SubAgentSessionID string                 `json:"subagent_session_id,omitempty"`
@@ -122,6 +126,8 @@ type DisplayEvent struct {
 	AgentKind            string           `json:"agent_kind,omitempty"`
 	AgentName            string           `json:"agent_name,omitempty"`
 	RootAgentName        string           `json:"root_agent_name,omitempty"`
+	ModelProfileID       string           `json:"model_profile_id,omitempty"`
+	ModelName            string           `json:"model_name,omitempty"`
 	RunPath              []string         `json:"run_path,omitempty"`
 	SubAgent             bool             `json:"subagent,omitempty"`
 	SubAgentSessionID    string           `json:"subagent_session_id,omitempty"`

@@ -7,13 +7,18 @@ import "strings"
 // 档位是介于"父 Agent 继承"与"逐 SubAgent 显式覆盖"之间的一层解析：它按 SubAgent
 // 的 ComputeRole（正文 / 推理 / 检查）而非脆弱的稳定 ID，把写作管线的各阶段整体
 // 映射到不同的模型 profile 与思考开关，从而让作者用一个开关在"质量优先"和"更省更快"
-// 之间切换。显式的 SubAgentConfig.Model 永远优先于档位，档位永远优先于父继承。
+// 之间切换。Auto 档位中显式 SubAgentConfig.Model 优先于档位；manual 则强制全部写作
+// SubAgent 跟随当前主模型，确保“指定模型”不会被旧的逐 SubAgent 覆盖拆散。
 //
 // 档位只作用于写作（IDE）管线；游戏模式的 choreographer 仍继承 interactive_story，
 // 边界清晰、互不影响。
 type WritingComputeTier string
 
 const (
+	// WritingComputeTierManual 指定模型：全部阶段继承写作主 Agent 当前选择的模型与思考设置。
+	// 该档位与 quality 的解析矩阵相同，但保留独立 wire 值，让统一选择器刷新后仍能区分
+	// “作者明确指定单一模型”和“Auto-质量优先”两种选择意图。
+	WritingComputeTierManual WritingComputeTier = "manual"
 	// WritingComputeTierQuality 质量优先：全部阶段使用 pro + 思考，等价于历史行为。
 	WritingComputeTierQuality WritingComputeTier = "quality"
 	// WritingComputeTierBalanced 平衡（默认）：正文阶段用 pro，推理/检查阶段下放到 flash。
@@ -58,6 +63,8 @@ const (
 // NormalizeWritingComputeTier 归一档位值；未知或空值回退到内置默认档位。
 func NormalizeWritingComputeTier(tier WritingComputeTier) WritingComputeTier {
 	switch WritingComputeTier(strings.TrimSpace(string(tier))) {
+	case WritingComputeTierManual:
+		return WritingComputeTierManual
 	case WritingComputeTierQuality:
 		return WritingComputeTierQuality
 	case WritingComputeTierBalanced:
@@ -88,6 +95,8 @@ func NormalizeComputeRole(role ComputeRole) ComputeRole {
 // effective 层最终由 NormalizeWritingComputeTier 兜底成默认档位。
 func sanitizeWritingComputeTierLayer(tier WritingComputeTier) WritingComputeTier {
 	switch WritingComputeTier(strings.TrimSpace(string(tier))) {
+	case WritingComputeTierManual:
+		return WritingComputeTierManual
 	case WritingComputeTierQuality:
 		return WritingComputeTierQuality
 	case WritingComputeTierBalanced:
@@ -109,10 +118,16 @@ type writingComputeTierPlan struct {
 
 // writingComputeTierMatrix 是档位 × role 的静态映射表（Go 权威定义）。
 //
+// - manual：所有 role 强制沿用父继承；ResolveSubAgentModel 会跳过逐 SubAgent 覆盖。
 // - quality：所有 role 都沿用父继承（IDE 默认 pro + 思考），等价历史行为。
 // - balanced：正文沿用父 pro；推理/检查下放到快速模型，推理保留思考、检查关思考。
 // - speed：所有 role 都用快速模型；仅正文保留思考，其余关思考以最快出稿。
 var writingComputeTierMatrix = map[WritingComputeTier]map[ComputeRole]writingComputeTierPlan{
+	WritingComputeTierManual: {
+		ComputeRoleProse:      {},
+		ComputeRoleReasoning:  {},
+		ComputeRoleMechanical: {},
+	},
 	WritingComputeTierQuality: {
 		ComputeRoleProse:      {},
 		ComputeRoleReasoning:  {},
@@ -171,6 +186,7 @@ type WritingComputeTierRoleRow struct {
 // WritingComputeTiers 是全部可选档位，按从质量到速度排序，供前端选择器与汇总展示复用。
 func WritingComputeTiers() []WritingComputeTier {
 	return []WritingComputeTier{
+		WritingComputeTierManual,
 		WritingComputeTierQuality,
 		WritingComputeTierBalanced,
 		WritingComputeTierSpeed,

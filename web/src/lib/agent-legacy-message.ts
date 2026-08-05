@@ -122,6 +122,8 @@ function metadataFromChatMessage(message: ChatMessage): AgentMessageMetadata | u
     agent_kind: message.agent_kind,
     agent_name: message.agent_name,
     root_agent_name: message.root_agent_name,
+    model_profile_id: message.model_profile_id,
+    model_name: message.model_name,
     run_path: message.run_path,
     subagent: message.subagent,
     subagent_session_id: message.subagent_session_id,
