@@ -54,8 +54,15 @@ export interface Settings {
   ide_story_teller_id?: string
   ide_image_preset_id?: string
   writing_skill_default?: string
+  writing_quick_actions?: WritingQuickActionSettings[]
   interactive_stage_font_size?: number | null
   interactive_stage_line_height?: number | null
+}
+
+export interface WritingQuickActionSettings {
+  id: string
+  label?: string
+  prompt: string
 }
 
 export interface ModelProfileSettings {

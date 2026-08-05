@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Activity, Bot, FileText, PenLine, Plus, SearchCheck, Sparkles, WandSparkles, X } from 'lucide-react'
+import { Activity, Bot, Plus, X } from 'lucide-react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -26,6 +26,9 @@ import { MAX_REVIEW_FEEDBACK_COMMENT_COUNT, MAX_REVIEW_FEEDBACK_CONTEXT_BYTES, r
 import { toast } from 'sonner'
 import type { ChatSendOptions } from '@/hooks/useAgentChat'
 import { APIError } from '@/lib/api-client'
+import { useWritingQuickActions } from '@/hooks/useWritingQuickActions'
+import { AgentQuickActions } from './AgentQuickActions'
+import { WritingQuickActionsMenu } from './WritingQuickActionsMenu'
 
 type AgentPanelView = 'chat' | 'sessions' | 'traces'
 
@@ -89,6 +92,7 @@ interface AgentPanelProps {
   onReviewFeedbackSubmissionFailed?: (feedback: ReviewFeedbackBatch) => void
   onOpenChangeReview?: (reviewThreadID: string, groupID: string) => void
   onWorkspaceChanged?: (paths: string[]) => void | Promise<void>
+  onOpenQuickActionSettings?: () => void
   onClose: () => void
   onSubAgentDetailsChange?: (open: boolean) => void
 }
@@ -144,6 +148,7 @@ export function AgentPanel({
   onReviewFeedbackSubmissionFailed,
   onOpenChangeReview,
   onWorkspaceChanged,
+  onOpenQuickActionSettings,
   onClose,
   onSubAgentDetailsChange,
 }: AgentPanelProps) {
@@ -163,6 +168,7 @@ export function AgentPanel({
   const writingSkill = persistedSettings.values.writing_skill_default
   const skillCommands = useSkillCommands({ agentKey: 'ide', workspace, fallbackEnabled: true })
   const writingSkillOptions = useWritingSkillOptions(workspace)
+  const writingQuickActions = useWritingQuickActions(workspace)
   const changeGroupsQuery = useWorkspaceChangeGroups(activeSessionId ? workspace : '', { sessionID: activeSessionId })
   const tokenUsageMessages = useMemo(
     () => selectAgentTokenUsageRecords(messages),
@@ -242,6 +248,13 @@ export function AgentPanel({
     onPlanModeChange(true)
     setInputPrefill((current) => ({
       prompt: formatPlanDiscussionMessage(agentViewContent(message)),
+      nonce: (current?.nonce || 0) + 1,
+    }))
+  }
+
+  const prefillComposer = (prompt: string) => {
+    setInputPrefill((current) => ({
+      prompt,
       nonce: (current?.nonce || 0) + 1,
     }))
   }
@@ -327,7 +340,13 @@ export function AgentPanel({
   }
 
   const emptyChatContent = messages.length === 0 && !isStreaming ? (
-    <AgentQuickActions chapter={currentChapter} selectedFile={selectedFile} onSend={sendWithWritingSkill} />
+    <AgentQuickActions
+      actions={writingQuickActions}
+      chapter={currentChapter}
+      selectedFile={selectedFile}
+      onPrefill={prefillComposer}
+      onOpenSettings={() => onOpenQuickActionSettings?.()}
+    />
   ) : null
   const messageListProps = {
     messages,
@@ -383,6 +402,16 @@ export function AgentPanel({
     onOpenTrace: openTraceRun,
     agentKey: 'ide' as const,
     workspace,
+    quickActionsControl: (
+      <WritingQuickActionsMenu
+        actions={writingQuickActions}
+        chapterTitle={currentChapter?.display_title}
+        selectedFile={selectedFile}
+        disabled={isStreaming}
+        onPrefill={prefillComposer}
+        onOpenSettings={() => onOpenQuickActionSettings?.()}
+      />
+    ),
     writingSkillControl: (
       <WritingComposerSettingsMenu
         enabled={Boolean(workspace) && !persistedSettings.loading}
@@ -554,51 +583,5 @@ function SubAgentDetailsResizeHandle({ label }: { label: string }) {
       aria-label={label}
       className="nova-resize-handle z-10 -mx-1 hidden w-2 cursor-col-resize bg-transparent transition-colors lg:block"
     />
-  )
-}
-
-function AgentQuickActions({
-  chapter,
-  selectedFile,
-  onSend,
-}: {
-  chapter?: ChapterSummary
-  selectedFile: string | null
-  onSend: (message: string) => void
-}) {
-  const { t } = useTranslation()
-  const target = chapter ? t('chat.quick.targetChapter', { title: chapter.display_title }) : (selectedFile ? t('chat.quick.targetFile', { file: selectedFile }) : t('chat.quick.targetWork'))
-  const actions = useMemo(() => [
-    { label: t('chat.quick.nextGroup'), icon: FileText, prompt: '请基于当前大纲、已有章节正文、setting/progress.md、setting/character-states.md 和资料库长期设定，生成接下来一个短期情节单元的章节组细纲。只规划下一组，不要批量生成很多组；细纲要短而可维护，方便阅读、评论和后续更新，每章只写关键点，不写长篇背景解释；如实际正文已经偏离大纲，请先指出偏差并让我确认是调整大纲还是拉回主线。' },
-    { label: t('chat.quick.writeNextChapter'), icon: PenLine, prompt: '请读取当前章节组细纲、长期大纲、setting/progress.md、setting/character-states.md、资料库长期设定和最近至少两章实际正文，按细纲安排创作下一章。写作前以已有章节路径和非空正文判断下一章编号、标题与所属分卷，setting/progress.md 只作为摘要参考；若属于某一卷，请写入 chapters/<分卷名>/ 下符合章节文件名模板的文件。完成正文自检和本轮最后修订后，在同一轮同步更新 setting/progress.md 与 setting/character-states.md；章节是否标记成章不影响同步。' },
-    { label: t('chat.quick.continueParagraph'), icon: PenLine, prompt: `请基于${target}的上下文，续写下一段正文，保持原有叙事节奏和人物状态。` },
-    { label: t('chat.quick.polishChapter'), icon: WandSparkles, prompt: `请检查并润色${target}，重点优化语句节奏、动作描写和情绪推进，不改变核心剧情。` },
-    { label: t('chat.quick.finalizeState'), icon: FileText, prompt: `请检查${target}与前后文和当前章节组细纲的连续性，并根据当前实际正文重新同步 setting/progress.md 和 setting/character-states.md；只有角色身份、人设、长期关系、能力体系或世界规则等稳定设定发生明确变化时，才更新资料库。章节状态只作为 UI 编辑标记，除非我明确要求，否则不要修改长期大纲。` },
-    { label: t('chat.quick.consistencyCheck'), icon: SearchCheck, prompt: `请对${target}做一致性检查，重点关注人物动机、时间线、道具、地点和前后文冲突。` },
-  ], [target, t])
-
-  return (
-    <div className="border-b border-[var(--nova-border)] bg-[var(--nova-bg)] p-3">
-      <div className="mb-2 flex items-center gap-2 text-xs font-medium text-[var(--nova-text-muted)]">
-        <Sparkles className="h-3.5 w-3.5 text-[var(--nova-text-muted)]" />
-        {t('chat.quickActions')}
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        {actions.map((action) => {
-          const Icon = action.icon
-          return (
-            <button
-              key={action.label}
-              type="button"
-              className="nova-nav-item flex items-center gap-2 border border-[var(--nova-border)] bg-[var(--nova-surface)] px-3 py-2 text-left text-xs"
-              onClick={() => onSend(action.prompt)}
-            >
-              <Icon className="h-3.5 w-3.5 shrink-0 text-[var(--nova-text-muted)]" />
-              <span className="truncate">{action.label}</span>
-            </button>
-          )
-        })}
-      </div>
-    </div>
   )
 }

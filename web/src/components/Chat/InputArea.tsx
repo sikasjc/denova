@@ -98,6 +98,7 @@ interface InputAreaProps {
   onOpenTrace?: (runID: string) => void
   agentKey?: VisibleAgentKey
   workspace?: string
+  quickActionsControl?: ReactNode
   writingSkillControl?: ReactNode
   onboardingAnchor?: string
   floating?: boolean
@@ -142,6 +143,7 @@ export function InputArea({
   onOpenTrace,
   agentKey,
   workspace,
+  quickActionsControl,
   writingSkillControl,
   onboardingAnchor,
   floating = false,
@@ -608,6 +610,7 @@ export function InputArea({
         }
         toolbarStart={
           <>
+            {quickActionsControl}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button

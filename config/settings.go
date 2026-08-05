@@ -74,19 +74,20 @@ type Settings struct {
 	UpdateCheckEnabled *bool  `toml:"update_check_enabled,omitempty" json:"update_check_enabled,omitempty"`
 
 	// Agent
-	MaxIteration             *int   `toml:"max_iteration,omitempty" json:"max_iteration,omitempty"`
-	ModelMaxRetries          *int   `toml:"model_max_retries,omitempty" json:"model_max_retries,omitempty"`
-	AgentIdleTimeoutSeconds  *int   `toml:"agent_idle_timeout_seconds,omitempty" json:"agent_idle_timeout_seconds,omitempty"`
-	AgentToolResultLimitKB   *int   `toml:"agent_tool_result_limit_kb,omitempty" json:"agent_tool_result_limit_kb,omitempty"`
-	LLMInputLogEnabled       *bool  `toml:"llm_input_log_enabled,omitempty" json:"llm_input_log_enabled,omitempty"`
-	TraceCaptureLevel        string `toml:"trace_capture_level,omitempty" json:"trace_capture_level,omitempty"`
-	TraceExporter            string `toml:"trace_exporter,omitempty" json:"trace_exporter,omitempty"`
-	TraceRetentionRuns       *int   `toml:"trace_retention_runs,omitempty" json:"trace_retention_runs,omitempty"`
-	PlanModeDefault          *bool  `toml:"plan_mode_default,omitempty" json:"plan_mode_default,omitempty"`
-	ChatResidentMessageLimit *int   `toml:"chat_resident_message_limit,omitempty" json:"chat_resident_message_limit,omitempty"`
-	IDEStoryTellerID         string `toml:"ide_story_teller_id,omitempty" json:"ide_story_teller_id,omitempty"`
-	IDEImagePresetID         string `toml:"ide_image_preset_id,omitempty" json:"ide_image_preset_id,omitempty"`
-	WritingSkillDefault      string `toml:"writing_skill_default,omitempty" json:"writing_skill_default,omitempty"`
+	MaxIteration             *int                  `toml:"max_iteration,omitempty" json:"max_iteration,omitempty"`
+	ModelMaxRetries          *int                  `toml:"model_max_retries,omitempty" json:"model_max_retries,omitempty"`
+	AgentIdleTimeoutSeconds  *int                  `toml:"agent_idle_timeout_seconds,omitempty" json:"agent_idle_timeout_seconds,omitempty"`
+	AgentToolResultLimitKB   *int                  `toml:"agent_tool_result_limit_kb,omitempty" json:"agent_tool_result_limit_kb,omitempty"`
+	LLMInputLogEnabled       *bool                 `toml:"llm_input_log_enabled,omitempty" json:"llm_input_log_enabled,omitempty"`
+	TraceCaptureLevel        string                `toml:"trace_capture_level,omitempty" json:"trace_capture_level,omitempty"`
+	TraceExporter            string                `toml:"trace_exporter,omitempty" json:"trace_exporter,omitempty"`
+	TraceRetentionRuns       *int                  `toml:"trace_retention_runs,omitempty" json:"trace_retention_runs,omitempty"`
+	PlanModeDefault          *bool                 `toml:"plan_mode_default,omitempty" json:"plan_mode_default,omitempty"`
+	ChatResidentMessageLimit *int                  `toml:"chat_resident_message_limit,omitempty" json:"chat_resident_message_limit,omitempty"`
+	IDEStoryTellerID         string                `toml:"ide_story_teller_id,omitempty" json:"ide_story_teller_id,omitempty"`
+	IDEImagePresetID         string                `toml:"ide_image_preset_id,omitempty" json:"ide_image_preset_id,omitempty"`
+	WritingSkillDefault      string                `toml:"writing_skill_default,omitempty" json:"writing_skill_default,omitempty"`
+	WritingQuickActions      *[]WritingQuickAction `toml:"writing_quick_actions,omitempty" json:"writing_quick_actions,omitempty"`
 
 	// 游戏模式
 	InteractiveStageFontSize   *int     `toml:"interactive_stage_font_size,omitempty" json:"interactive_stage_font_size,omitempty"`
@@ -329,6 +330,9 @@ func Merge(parent, child Settings) Settings {
 	}
 	if child.WritingSkillDefault != "" {
 		out.WritingSkillDefault = child.WritingSkillDefault
+	}
+	if child.WritingQuickActions != nil {
+		out.WritingQuickActions = child.WritingQuickActions
 	}
 	if child.InteractiveStageFontSize != nil {
 		out.InteractiveStageFontSize = child.InteractiveStageFontSize
@@ -624,6 +628,7 @@ func sanitizeEditableSettings(s Settings) Settings {
 	s.MotionIntensity = normalizeMotionIntensity(s.MotionIntensity)
 	s.IDEImagePresetID = strings.TrimSpace(s.IDEImagePresetID)
 	s.WritingSkillDefault = strings.TrimSpace(s.WritingSkillDefault)
+	s.WritingQuickActions = sanitizeWritingQuickActions(s.WritingQuickActions)
 	s.OpenAIContextWindowTokens = normalizeContextWindowTokens(s.OpenAIContextWindowTokens)
 	s.ImageAPIBaseURL = strings.TrimSpace(s.ImageAPIBaseURL)
 	s.ImageAPIModel = strings.TrimSpace(s.ImageAPIModel)

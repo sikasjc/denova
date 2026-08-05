@@ -18,6 +18,7 @@ import type { BookRecord, BookSortMode, ChapterIllustration, ChapterSummary, Con
 import type { AgentUIMessage } from '@/lib/agent-ui'
 import type { ChatSendOptions } from '@/hooks/useAgentChat'
 import { usePersistedUserSettings } from '@/hooks/usePersistedUserSettings'
+import { SETTINGS_SECTION_EVENT } from '@/features/onboarding/events'
 import type { AgentPartRef } from '@/lib/agent-message-view'
 import type { RightPanel, WorkspaceMode } from '@/stores/workspace-store'
 import { workspaceFileKind } from '@/lib/workspace-file-kind'
@@ -281,6 +282,15 @@ export function ModeRouter(props: ModeRouterProps) {
     flushComposerSettingsBestEffort()
     return onQuickSwitchBook(path)
   }, [flushComposerSettingsBestEffort, onQuickSwitchBook])
+
+  const openWritingQuickActionSettings = useCallback(() => {
+    if (!settingsOpen) onToggleSettings()
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent(SETTINGS_SECTION_EVENT, {
+        detail: { section: 'ide-quick-actions' },
+      }))
+    }, 0)
+  }, [onToggleSettings, settingsOpen])
 
   useEffect(() => {
     setEditorLine(1)
@@ -789,6 +799,7 @@ export function ModeRouter(props: ModeRouterProps) {
       onReviewFeedbackSubmissionFailed={restoreActiveReviewFeedback}
       onOpenChangeReview={(reviewThreadID, groupID) => { void openChangeReview(reviewThreadID, groupID) }}
       onWorkspaceChanged={onWorkspaceChanged}
+      onOpenQuickActionSettings={openWritingQuickActionSettings}
       onClose={() => onSetRightPanel(null)}
       onSubAgentDetailsChange={setAgentSubAgentDetailsOpen}
     />

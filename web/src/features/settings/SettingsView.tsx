@@ -27,10 +27,11 @@ import { scheduleFrontendReloadAfterUpdate } from './update-reload'
 import { DEFAULT_MODEL_PROFILE_ID, modelProfileID, modelProfileLabel, modelProfilesWithDefault } from './model-profiles'
 import { DEFAULT_IMAGE_API_BASE_URL, DEFAULT_IMAGE_API_MODEL, DEFAULT_IMAGE_API_PROFILE_ID, DEFAULT_IMAGE_API_PROVIDER, imageAPIProfileID, imageAPIProfileLabel, imageAPIProfilesWithDefault } from './image-profiles'
 import { ONBOARDING_OPEN_EVENT, SETTINGS_SECTION_EVENT, type SettingsSectionRequest } from '@/features/onboarding/events'
+import { WritingQuickActionsEditor } from './WritingQuickActionsEditor'
 
-type SettingsSectionId = 'model' | 'image' | 'paths' | 'access' | 'appearance' | 'updates' | 'agent' | 'debug' | 'ide-editor' | 'ide-output' | 'versions' | 'interactive'
+type SettingsSectionId = 'model' | 'image' | 'paths' | 'access' | 'appearance' | 'updates' | 'agent' | 'debug' | 'ide-editor' | 'ide-quick-actions' | 'ide-output' | 'versions' | 'interactive'
 
-const SETTINGS_SECTION_IDS: SettingsSectionId[] = ['model', 'image', 'paths', 'access', 'appearance', 'updates', 'agent', 'debug', 'ide-editor', 'ide-output', 'versions', 'interactive']
+const SETTINGS_SECTION_IDS: SettingsSectionId[] = ['model', 'image', 'paths', 'access', 'appearance', 'updates', 'agent', 'debug', 'ide-editor', 'ide-quick-actions', 'ide-output', 'versions', 'interactive']
 
 type SettingsSection = {
   id: SettingsSectionId
@@ -83,6 +84,7 @@ export function SettingsView({ onClose }: { onClose?: () => void }) {
     agent: true,
     debug: true,
     'ide-editor': true,
+    'ide-quick-actions': true,
     'ide-output': true,
     versions: true,
     interactive: true,
@@ -438,6 +440,19 @@ export function SettingsView({ onClose }: { onClose?: () => void }) {
             onChange={(v) => setField('ide_story_teller_id', v)}
           />
         </>
+      ),
+    },
+    {
+      id: 'ide-quick-actions',
+      group: t('settings.group.ide'),
+      title: t('settings.section.quickActions'),
+      children: (
+        <WritingQuickActionsEditor
+          actions={draft.writing_quick_actions}
+          effectiveActions={effective.writing_quick_actions}
+          hasOverride={Object.prototype.hasOwnProperty.call(draft, 'writing_quick_actions')}
+          onChange={(actions) => setField('writing_quick_actions', actions)}
+        />
       ),
     },
     {

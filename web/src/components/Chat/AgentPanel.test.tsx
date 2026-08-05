@@ -44,6 +44,10 @@ describe('AgentPanel', () => {
   beforeEach(() => {
     vi.mocked(toast.error).mockReset()
     vi.mocked(fetchSettings).mockClear()
+    vi.mocked(fetchSettings).mockResolvedValue({
+      effective: { ide_story_teller_id: 'classic', writing_skill_default: 'novel-lite' },
+      user: {},
+    } as any)
     vi.mocked(updateUserSettings).mockClear()
     vi.mocked(updateUserSettings).mockImplementation(async (settings) => ({
       default: {},
@@ -107,19 +111,85 @@ describe('AgentPanel', () => {
     expect(handleCreateSession).toHaveBeenCalledTimes(1)
   })
 
-  it('写下一章快捷提示要求同轮同步作品状态且不依赖成章确认', async () => {
+  it('写下一章快捷提示填入编辑框供修改，不直接发送', async () => {
     const user = userEvent.setup()
     const handleSend = vi.fn()
     renderAgentPanel({ onSend: handleSend })
 
     await user.click(screen.getByRole('button', { name: '按细纲写下一章' }))
 
-    expect(handleSend).toHaveBeenCalledWith(
-      expect.stringContaining('在同一轮同步更新 setting/progress.md 与 setting/character-states.md'),
-      expect.objectContaining({ writingSkill: 'novel-lite', tellerId: 'classic' }),
-    )
-    expect(handleSend.mock.calls[0][0]).toContain('章节是否标记成章不影响同步')
-    expect(handleSend.mock.calls[0][0]).not.toContain('由我在章节列表确认后再标记为成章')
+    const textbox = screen.getByRole('textbox')
+    await waitFor(() => expect(textbox).toHaveTextContent('在同一轮同步更新 setting/progress.md 与 setting/character-states.md'))
+    expect(textbox).toHaveTextContent('章节是否标记成章不影响同步')
+    expect(textbox).not.toHaveTextContent('由我在章节列表确认后再标记为成章')
+    expect(handleSend).not.toHaveBeenCalled()
+
+    const prefilledPrompt = textbox.textContent || ''
+    await user.type(textbox, 'Z')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+
+    const [editedPrompt, options] = handleSend.mock.calls[0]
+    expect(editedPrompt).not.toBe(prefilledPrompt)
+    expect(editedPrompt).toContain('Z')
+    expect(options).toEqual(expect.objectContaining({ writingSkill: 'novel-lite', tellerId: 'classic' }))
+  })
+
+  it('读取自定义快捷按钮并替换当前目标占位符', async () => {
+    vi.mocked(fetchSettings).mockResolvedValue({
+      effective: {
+        ide_story_teller_id: 'classic',
+        writing_skill_default: 'novel-lite',
+        writing_quick_actions: [{ id: 'custom-review', label: '检查当前目标', prompt: '请检查 {target}，先不要修改。' }],
+      },
+      user: {},
+    } as any)
+    const user = userEvent.setup()
+    const handleSend = vi.fn()
+    renderAgentPanel({
+      selectedFile: 'chapters/ch01.md',
+      onSend: handleSend,
+    })
+
+    await user.click(await screen.findByRole('button', { name: '检查当前目标' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox')).toHaveTextContent('请检查 当前文件 chapters/ch01.md，先不要修改。')
+    })
+    expect(handleSend).not.toHaveBeenCalled()
+  })
+
+  it('产生对话后仍可从输入框工具栏打开快捷创作并预填当前会话', async () => {
+    const user = userEvent.setup()
+    const handleSend = vi.fn()
+    renderAgentPanel({
+      messages: [{ id: 'assistant-1', role: 'assistant', parts: [{ type: 'text', text: '已有回复' }] }],
+      selectedFile: 'chapters/ch01.md',
+      onSend: handleSend,
+    })
+
+    expect(screen.queryByText('点击按钮会填入编辑框，你可以修改后再发送。')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '打开快捷创作' }))
+    expect(screen.getByText('动作会填入当前会话的编辑框；需要隔离上下文时，请先新建会话。')).toBeInTheDocument()
+    await user.click(screen.getByRole('menuitem', { name: '续写下一段' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox')).toHaveTextContent('当前文件 chapters/ch01.md')
+    })
+    expect(handleSend).not.toHaveBeenCalled()
+  })
+
+  it('快捷创作菜单可直接打开自定义设置', async () => {
+    const user = userEvent.setup()
+    const handleOpenSettings = vi.fn()
+    renderAgentPanel({
+      messages: [{ id: 'assistant-1', role: 'assistant', parts: [{ type: 'text', text: '已有回复' }] }],
+      onOpenQuickActionSettings: handleOpenSettings,
+    })
+
+    await user.click(screen.getByRole('button', { name: '打开快捷创作' }))
+    await user.click(screen.getByRole('menuitem', { name: '自定义快捷创作' }))
+
+    expect(handleOpenSettings).toHaveBeenCalledTimes(1)
   })
 
   it('创作 Agent 将思考和工具调用折叠到同一个思考过程', async () => {

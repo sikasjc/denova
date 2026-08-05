@@ -109,6 +109,9 @@ func TestDefaultSettingsValues(t *testing.T) {
 	if s.IDEImagePresetID != "game-cg" {
 		t.Fatalf("IDEImagePresetID default: %s", s.IDEImagePresetID)
 	}
+	if s.WritingQuickActions != nil {
+		t.Fatalf("WritingQuickActions should fall back to frontend defaults until customized: %#v", s.WritingQuickActions)
+	}
 	if len(s.SubAgents) != 0 {
 		t.Fatalf("SubAgents should come from editable config layers, not Go defaults: %#v", s.SubAgents)
 	}
@@ -293,6 +296,55 @@ func TestWriteThenReadSettings(t *testing.T) {
 	}
 	if out.Language != "en-US" {
 		t.Fatalf("language")
+	}
+}
+
+func TestWriteThenReadWritingQuickActionsPreservesExplicitEmptyList(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	actions := []WritingQuickAction{}
+	if err := WriteSettingsFile(path, Settings{WritingQuickActions: &actions}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := ReadSettingsFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.WritingQuickActions == nil || len(*out.WritingQuickActions) != 0 {
+		t.Fatalf("explicit empty quick actions should round trip: %#v", out.WritingQuickActions)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "writing_quick_actions = []") {
+		t.Fatalf("explicit empty quick actions should be persisted: %s", string(data))
+	}
+}
+
+func TestWriteSettingsFileSanitizesWritingQuickActions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	actions := []WritingQuickAction{
+		{ID: " review ", Label: " 检查 ", Prompt: " 检查 {target} "},
+		{ID: "review", Label: "复查", Prompt: "再次检查"},
+	}
+	if err := WriteSettingsFile(path, Settings{WritingQuickActions: &actions}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := ReadSettingsFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.WritingQuickActions == nil || len(*out.WritingQuickActions) != 2 {
+		t.Fatalf("quick actions should round trip: %#v", out.WritingQuickActions)
+	}
+	got := *out.WritingQuickActions
+	if got[0].ID != "review" || got[0].Label != "检查" || got[0].Prompt != "检查 {target}" {
+		t.Fatalf("quick action should be trimmed: %#v", got[0])
+	}
+	if got[1].ID != "review-2" {
+		t.Fatalf("duplicate quick action id should be made unique: %#v", got[1])
 	}
 }
 

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchSettings, updateUserSettings } from './api'
 import { modelProfilesForEditor, SettingsView, UpdatePanel } from './SettingsView'
@@ -155,6 +155,73 @@ describe('SettingsView user scope', () => {
 
     expect(updateUserSettings).toHaveBeenCalledWith(
       expect.objectContaining({ version_timed_interval_minutes: 20 }),
+      'user-rev',
+    )
+  })
+
+  it('customizes, reorders, and removes Writing quick actions at user scope', async () => {
+    const settings = layeredSettings({ devMode: false })
+    settings.effective = {
+      ...settings.effective,
+      writing_quick_actions: [{ id: 'custom-review', label: '检查章节', prompt: '检查 {target}' }],
+    }
+    vi.mocked(fetchSettings).mockResolvedValue(settings)
+    vi.mocked(updateUserSettings).mockImplementation(async (draft) => ({
+      ...settings,
+      user: draft,
+      effective: { ...settings.effective, ...draft },
+      revisions: { ...settings.revisions, user: 'user-rev-2' },
+    }))
+
+    render(<SettingsView />)
+
+    expect(await screen.findByDisplayValue('检查章节')).toBeInTheDocument()
+    vi.useFakeTimers()
+    fireEvent.change(screen.getByDisplayValue('检查章节'), { target: { value: '检查并建议' } })
+    fireEvent.click(screen.getByRole('button', { name: '新增按钮' }))
+    const editor = screen.getByText('快捷创作按钮').closest('.nova-settings-row')
+    expect(editor).not.toBeNull()
+    expect(within(editor as HTMLElement).getAllByLabelText('按钮名称')).toHaveLength(2)
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1100) })
+
+    expect(updateUserSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        writing_quick_actions: expect.arrayContaining([
+          expect.objectContaining({ id: 'custom-review', label: '检查并建议', prompt: '检查 {target}' }),
+          expect.objectContaining({ id: expect.stringContaining('custom-') }),
+        ]),
+      }),
+      'user-rev',
+    )
+  })
+
+  it('restores localized built-in quick actions by clearing the user override', async () => {
+    const settings = layeredSettings({ devMode: false })
+    settings.user = {
+      writing_quick_actions: [{ id: 'custom-review', label: '检查章节', prompt: '检查 {target}' }],
+    }
+    settings.effective = { ...settings.effective, ...settings.user }
+    vi.mocked(fetchSettings).mockResolvedValue(settings)
+    vi.mocked(updateUserSettings).mockImplementation(async (draft) => ({
+      ...settings,
+      user: draft,
+      effective: { ...settings.default, ...draft },
+      revisions: { ...settings.revisions, user: 'user-rev-2' },
+    }))
+
+    render(<SettingsView />)
+
+    expect(await screen.findByDisplayValue('检查章节')).toBeInTheDocument()
+    vi.useFakeTimers()
+    fireEvent.click(screen.getByRole('button', { name: '恢复默认' }))
+
+    expect(screen.queryByDisplayValue('检查章节')).not.toBeInTheDocument()
+    expect(screen.getByPlaceholderText('下一组细纲')).toBeInTheDocument()
+    await act(async () => { await vi.advanceTimersByTimeAsync(1100) })
+
+    expect(updateUserSettings).toHaveBeenCalledWith(
+      expect.not.objectContaining({ writing_quick_actions: expect.anything() }),
       'user-rev',
     )
   })
