@@ -333,6 +333,7 @@ const chat = {
   'chat.tokenUsage.columns.bytes': 'Bytes',
   'chat.tokenUsage.columns.run': 'Run ID',
   'chat.activity.thinking': 'Thinking...',
+  'chat.activity.rendering': 'Rendering...',
   'chat.activity.compacting': 'Compressing context...',
   'chat.activity.compacted': 'Context compressed. Continuing...',
   'chat.activity.done': 'Done',

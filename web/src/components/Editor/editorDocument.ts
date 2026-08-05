@@ -26,6 +26,18 @@ export function isMarkdownFile(name: string | null): boolean {
   return !!name && /\.(md|markdown)$/i.test(name)
 }
 
+/**
+ * 超过该字符数的文档视为“超大文档”。TipTap/ProseMirror 不做虚拟化，会一次性
+ * 同步解析并全量渲染整篇正文，超大文档的挂载/卸载会阻塞主线程数秒。此阈值用于
+ * 触发挂载前的加载指示，并跳过需要全文遍历的可选装饰（如对白高亮）。
+ */
+export const LARGE_DOCUMENT_CHAR_THRESHOLD = 50000
+
+/** 判断文档是否达到“超大文档”规模，用于降级渲染策略。 */
+export function isLargeDocument(content: string): boolean {
+  return content.length > LARGE_DOCUMENT_CHAR_THRESHOLD
+}
+
 export function createWorkspaceImageExtension() {
   return Image.extend({
     renderHTML({ HTMLAttributes }) {

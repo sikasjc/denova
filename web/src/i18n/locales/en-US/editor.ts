@@ -1,6 +1,8 @@
 const editor = {
   'editor.placeholder': 'Choose a file to start editing...',
   'editor.noFile': 'Choose a Markdown file from the left to start editing',
+  'editor.openingLargeChapter': 'Opening chapter…',
+  'editor.largeChapterHint': 'This chapter is large and may load slowly. Consider splitting it into multiple chapters for a smoother editing experience.',
   'editor.save': 'Save',
   'editor.saveSuccess': 'Saved',
   'editor.saveFailed': 'Save failed',

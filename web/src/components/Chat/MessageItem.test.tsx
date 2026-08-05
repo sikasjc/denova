@@ -83,6 +83,55 @@ describe('MessageItem', () => {
     expect(persistedTags).toEqual(streamedTags)
   })
 
+  it('已完成的大段消息分帧渐进渲染，先渲染首屏并显示“正在渲染…”', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
+      frames.push(callback)
+      return frames.length
+    }))
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    try {
+      // 生成远超渐进阈值（40）的块数：每个空行分隔的段落即一个块。
+      const content = Array.from({ length: 120 }, (_, index) => `段落 ${index}`).join('\n\n')
+      const { container } = render(<MessageItem message={{ role: 'assistant', content, streaming: false }} />)
+
+      const countParagraphs = () => container.querySelectorAll('.chat-agent-message > p').length
+      const initial = countParagraphs()
+      expect(initial).toBeGreaterThan(0)
+      expect(initial).toBeLessThan(120)
+      expect(screen.getByRole('status')).toHaveTextContent('正在渲染…')
+
+      // 逐帧推进，直到全部块渲染完毕、指示消失。
+      act(() => {
+        while (frames.length > 0) frames.shift()?.(0)
+      })
+
+      expect(countParagraphs()).toBe(120)
+      expect(screen.queryByText('正在渲染…')).not.toBeInTheDocument()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('小段已完成消息即时全量渲染，不显示渲染指示', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
+      frames.push(callback)
+      return frames.length
+    }))
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    try {
+      const content = Array.from({ length: 5 }, (_, index) => `段落 ${index}`).join('\n\n')
+      const { container } = render(<MessageItem message={{ role: 'assistant', content, streaming: false }} />)
+
+      expect(container.querySelectorAll('.chat-agent-message > p')).toHaveLength(5)
+      expect(screen.queryByText('正在渲染…')).not.toBeInTheDocument()
+      expect(frames).toHaveLength(0)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('流式 assistant 不展示操作按钮但预留底部操作区，完成后再展示复制', () => {
     const { container, rerender } = render(
       <MessageItem

@@ -333,6 +333,7 @@ const chat = {
   'chat.tokenUsage.columns.bytes': '字节',
   'chat.tokenUsage.columns.run': 'Run ID',
   'chat.activity.thinking': '思考中...',
+  'chat.activity.rendering': '正在渲染…',
   'chat.activity.compacting': '正在压缩上下文…',
   'chat.activity.compacted': '上下文压缩完成，继续生成…',
   'chat.activity.done': '完成',

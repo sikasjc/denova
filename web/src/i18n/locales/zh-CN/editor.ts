@@ -1,6 +1,8 @@
 const editor = {
   'editor.placeholder': '选择一个文件开始编辑...',
   'editor.noFile': '选择左侧 Markdown 文件开始编辑',
+  'editor.openingLargeChapter': '正在打开章节…',
+  'editor.largeChapterHint': '本章内容较多，加载可能稍慢，建议拆分为多个章节以获得更流畅的编辑体验。',
   'editor.save': '保存',
   'editor.saveSuccess': '保存成功',
   'editor.saveFailed': '保存失败',

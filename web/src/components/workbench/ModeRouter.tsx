@@ -7,7 +7,8 @@ import { FileTree } from '@/components/Sidebar/FileTree'
 import { SearchPanel } from '@/components/Sidebar/SearchPanel'
 import { AgentPanel, WRITING_COMPOSER_SETTING_DEFAULTS } from '@/components/Chat/AgentPanel'
 import { FilePreview } from '@/components/workbench/FilePreview'
-import { MarkdownEditor, type DocumentReviewNavigationIntent, type EditorFlushHandler } from '@/components/Editor/MarkdownEditor'
+import { type DocumentReviewNavigationIntent, type EditorFlushHandler } from '@/components/Editor/MarkdownEditor'
+import { DeferredMarkdownEditor } from '@/components/Editor/DeferredMarkdownEditor'
 import { BookSettingsShortcuts } from '@/components/workbench/BookSettingsShortcuts'
 import { getImagePresets, getInteractiveTellers } from '@/features/interactive/api'
 import { useInteractiveStore } from '@/features/interactive/stores/interactive-store'
@@ -620,7 +621,7 @@ export function ModeRouter(props: ModeRouterProps) {
                 activeFileKind === 'image' || activeFileKind === 'json' || activeFileKind === 'jsonl' ? (
                   <FilePreview path={selectedFile || activeTab.path} content={fileContent} />
                 ) : (
-                  <MarkdownEditor
+                  <DeferredMarkdownEditor
                     key={selectedFile ?? 'empty'}
                     workspace={workspace}
                     fileName={selectedFile}

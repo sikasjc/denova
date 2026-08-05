@@ -23,6 +23,7 @@ import {
   createWorkspaceImageExtension,
   getLineNumber,
   hasNativeIndent,
+  isLargeDocument,
   isMarkdownFile,
   isTxtFile,
   placeEditorCaretAtClick,
@@ -132,6 +133,9 @@ export function MarkdownEditor({
   const lastSearchIntentNonceRef = useRef<number | null>(null)
   const lastDocumentReviewNavigationNonceRef = useRef<number | null>(null)
   const searchStateRef = useRef<SearchState>({ query: '', index: 0, useRegex: false })
+  // 超大文档在挂载时确定一次：跳过需要全文遍历的对白高亮装饰，减轻同步解析压力。
+  // 文件切换由上层 key 触发整体重挂，因此该判断始终对应当前文件。
+  const [largeDocument] = useState(() => isLargeDocument(content))
   const searchExtension = useMemo(() => createSearchHighlightExtension(searchStateRef), [])
   const dialogueHighlightExtension = useMemo(() => createDialogueHighlightExtension(), [])
   const workspaceImageExtension = useMemo(() => createWorkspaceImageExtension(), [])
@@ -149,7 +153,8 @@ export function MarkdownEditor({
       }),
       createIndentedHardBreakExtension(),
       searchExtension,
-      dialogueHighlightExtension,
+      // 超大文档跳过全文对白高亮，避免每次 docChanged 都全文遍历重建装饰。
+      ...(largeDocument ? [] : [dialogueHighlightExtension]),
       workspaceImageExtension,
       reviewExtension,
       TableKit.configure({

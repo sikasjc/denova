@@ -9,6 +9,7 @@ import type { UserMessageReference } from '@/lib/api-client/types'
 import { findDialogueHighlightRanges } from '@/lib/dialogue-highlight'
 import { isWorkspaceImagePath } from '@/lib/workspace-file-kind'
 import { useBottomScrollLock } from '@/hooks/useBottomScrollLock'
+import { useProgressiveReveal } from '@/hooks/useProgressiveReveal'
 import { TooltipIconButton } from '@/components/common/tooltip-icon-button'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { subAgentSessionKey } from './subagent-session'
@@ -105,10 +106,13 @@ export const MessageItem = memo(function MessageItem({ message, highlightDialogu
               <AIMessageContent className="chat-agent-message block w-full gap-0 px-1 text-sm text-[var(--nova-text)]" style={messageStyle}>
                 {message.streaming && !visibleContent ? (
                   <StreamingPlaceholder />
-                ) : message.streaming ? (
-                  <StreamingMarkdown content={content} targetContent={streamingTargetContent} highlightDialogue={highlightDialogue} />
                 ) : (
-                  <MarkdownContent content={content} highlightDialogue={highlightDialogue} />
+                  <MarkdownContent
+                    content={content}
+                    targetContent={streamingTargetContent}
+                    streaming={message.streaming === true}
+                    highlightDialogue={highlightDialogue}
+                  />
                 )}
               </AIMessageContent>
               <InteractiveImageStrip message={message} />
@@ -524,11 +528,12 @@ function SubAgentOutputWindow({
         >
           {hasContent ? (
             <div className="chat-agent-message text-sm text-[var(--nova-text)]" style={messageStyle}>
-              {message.streaming ? (
-                <StreamingMarkdown content={shownContent} targetContent={shownTargetContent} highlightDialogue={highlightDialogue} />
-              ) : (
-                <MarkdownContent content={shownContent} highlightDialogue={highlightDialogue} />
-              )}
+              <MarkdownContent
+                content={shownContent}
+                targetContent={shownTargetContent}
+                streaming={message.streaming === true}
+                highlightDialogue={highlightDialogue}
+              />
             </div>
           ) : (
             <div className="text-[11px] text-[var(--nova-text-faint)]">{t('chat.subagent.empty')}</div>
@@ -1560,15 +1565,6 @@ function StreamingPlaceholder() {
   )
 }
 
-/** 流式 Markdown 与纯文本共用“预留目标高度后再揭示”的帧序。 */
-function StreamingMarkdown({ content, targetContent, highlightDialogue }: { content: string; targetContent?: string; highlightDialogue: boolean }) {
-  return (
-    <StreamingContentStage content={content} targetContent={targetContent} streaming>
-      {(value) => <MarkdownContent content={value} highlightDialogue={highlightDialogue} />}
-    </StreamingContentStage>
-  )
-}
-
 function sanitizeThinkTags(text: string): string {
   let result = text
   // 部分 provider 返回的内部特殊 token 与文本形式的工具调用残留（兜底历史数据；新对话已由后端解析执行）
@@ -1596,18 +1592,51 @@ const MarkdownBlock = memo(function MarkdownBlock({ content, highlightDialogue }
   )
 })
 
-const MarkdownContent = memo(function MarkdownContent({ content, highlightDialogue }: { content: string; highlightDialogue: boolean }) {
+/**
+ * 超过该块数的“已完成”消息启用分帧渐进渲染：一次性同步挂载几百个 Markdown 块会
+ * 造成主线程长任务卡死，因此拆到多帧完成。流式态不受此约束（内容本就逐帧到达）。
+ */
+const PROGRESSIVE_MARKDOWN_BLOCK_THRESHOLD = 40
+/** 首屏立即挂载的块数，用于填满一屏、避免出现空白等待。 */
+const PROGRESSIVE_MARKDOWN_INITIAL_BATCH = 24
+/** 渐进渲染时每个动画帧追加挂载的块数。 */
+const PROGRESSIVE_MARKDOWN_BATCH_STEP = 16
+
+const MarkdownContent = memo(function MarkdownContent({ content, targetContent, streaming = false, highlightDialogue }: { content: string; targetContent?: string; streaming?: boolean; highlightDialogue: boolean }) {
+  // 流式期间始终渲染最新目标快照；已封口的块内容稳定，memo 可跳过重解析，
+  // 因此流式结束换成非流式时不会重挂整棵树（同一组件、同一 key 序列，仅尾块封口）。
+  const value = streaming && targetContent !== undefined ? targetContent : content
   // 流式与非流式共用同一套分块，保证顶层元素序列（DOM 结构）一致；
   // 块间无包裹节点（MarkdownRenderer 返回 Fragment），因此块级渲染不改变 .chat-agent-message 的直接子节点。
-  const blocks = splitMarkdownBlocks(content)
+  const blocks = splitMarkdownBlocks(value)
+  // 仅“已完成”的大段内容分帧渐进挂载；流式态由上游按帧推进，不再二次分帧。
+  const progressive = !streaming && blocks.length > PROGRESSIVE_MARKDOWN_BLOCK_THRESHOLD
+  const visibleCount = useProgressiveReveal(blocks.length, {
+    enabled: progressive,
+    initialBatch: PROGRESSIVE_MARKDOWN_INITIAL_BATCH,
+    step: PROGRESSIVE_MARKDOWN_BATCH_STEP,
+  })
+  const revealing = visibleCount < blocks.length
+
   return (
     <>
-      {blocks.map((block, index) => (
+      {blocks.slice(0, visibleCount).map((block, index) => (
         <MarkdownBlock key={index} content={block} highlightDialogue={highlightDialogue} />
       ))}
+      {revealing && <MarkdownRenderingIndicator />}
     </>
   )
 })
+
+/** 大段内容分帧渲染尚未完成时的轻量提示，避免用户以为前端卡死。 */
+function MarkdownRenderingIndicator() {
+  const { t } = useTranslation()
+  return (
+    <div className="py-1" role="status" aria-live="polite">
+      <Shimmer as="span" className="text-xs font-medium">{t('chat.activity.rendering')}</Shimmer>
+    </div>
+  )
+}
 
 const markdownComponents: MarkdownRendererComponents = {
   img: ChatMarkdownImage,
