@@ -27,7 +27,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useKeyboardInset } from '@/hooks/useKeyboardInset'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { ReviewFeedbackTray, reviewFeedbackCommentCount, type ReviewFeedbackBatch, type ReviewFeedbackComment, type ReviewFeedbackSelection } from '@/features/changes/agent/ReviewFeedbackTray'
@@ -101,7 +100,6 @@ interface InputAreaProps {
   agentKey?: VisibleAgentKey
   workspace?: string
   quickActionsControl?: ReactNode
-  showWritingIntentControl?: boolean
   writingSkillControl?: ReactNode
   onboardingAnchor?: string
   floating?: boolean
@@ -147,7 +145,6 @@ export function InputArea({
   agentKey,
   workspace,
   quickActionsControl,
-  showWritingIntentControl = false,
   writingSkillControl,
   onboardingAnchor,
   floating = false,
@@ -628,32 +625,6 @@ export function InputArea({
         toolbarStart={
           <>
             {quickActionsControl}
-            {showWritingIntentControl ? (
-              <Select
-                value={effectiveWritingIntent ?? '__auto__'}
-                disabled={disabled || hasReviewFeedback}
-                onValueChange={(value) => setWritingIntent(value === '__auto__' ? undefined : value as WritingIntent)}
-              >
-                <SelectTrigger
-                  size="sm"
-                  className="nova-agent-composer-intent h-8 min-w-0 max-w-[min(9rem,32vw)] border-[var(--nova-border)] bg-[var(--nova-surface)] px-2 text-xs text-[var(--nova-text-muted)] shadow-none"
-                  aria-label={t('chat.writingIntent.label')}
-                  title={hasReviewFeedback ? t('chat.writingIntent.reviewLocked') : t('chat.writingIntent.description')}
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="nova-panel border text-[var(--nova-text)]">
-                  <SelectGroup>
-                    <SelectItem value="__auto__">{t('chat.writingIntent.auto')}</SelectItem>
-                    <SelectItem value="planning">{t('chat.writingIntent.planning')}</SelectItem>
-                    <SelectItem value="prose_generation">{t('chat.writingIntent.proseGeneration')}</SelectItem>
-                    <SelectItem value="prose_revision">{t('chat.writingIntent.proseRevision')}</SelectItem>
-                    <SelectItem value="review_application">{t('chat.writingIntent.reviewApplication')}</SelectItem>
-                    <SelectItem value="analysis">{t('chat.writingIntent.analysis')}</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button

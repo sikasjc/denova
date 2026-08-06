@@ -34,6 +34,8 @@ type ideChatRuntime struct {
 	ideTeller      agent.IDEStoryTeller
 }
 
+var classifyWritingIntent = agent.ClassifyWritingIntent
+
 // ClearSession 为当前会话追加上下文清理标记。
 func (a *App) ClearSession() error {
 	return a.chat().ClearSession()
@@ -511,9 +513,38 @@ func applyWritingSkillRuntimePolicy(ctx context.Context, runtime *ideChatRuntime
 	req.WritingSkill = agent.ResolveWritingSkillName(&runtime.cfg, req.WritingSkill)
 	req.WritingIntent = config.NormalizeWritingIntent(req.WritingIntent)
 	req.LoadedWritingSkill = nil
+	resolution := agent.ResolveWritingIntentRoute(*req)
+	intentReason := resolution.Reason
+	if req.WritingIntent == config.WritingIntentAuto {
+		switch {
+		case resolution.NeedsClassification:
+			classification, err := classifyWritingIntent(ctx, &runtime.cfg, req.Message)
+			if err != nil {
+				req.WritingIntent = config.WritingIntentAnalysis
+				intentReason = "fast_classifier_failed_fallback_discussion"
+				log.Printf("[agent-task] writing intent classifier failed; fallback=analysis workspace=%s reason=%s err=%v",
+					runtime.workspace, resolution.Reason, err)
+			} else if classification.AllowsExecution(req.Message) {
+				req.WritingIntent = classification.Intent
+				intentReason = "fast_classifier_high_confidence"
+				log.Printf("[agent-task] writing intent classified intent=%s execute_now=%t confidence=%s evidence=%q reason=%q workspace=%s",
+					classification.Intent, classification.ExecuteNow, classification.Confidence, classification.Evidence, classification.Reason, runtime.workspace)
+			} else {
+				req.WritingIntent = config.WritingIntentAnalysis
+				if classification.Intent == config.WritingIntentPlanning {
+					req.WritingIntent = config.WritingIntentPlanning
+				}
+				intentReason = "fast_classifier_conservative_non_execution"
+				log.Printf("[agent-task] writing intent kept non-execution classified_intent=%s execute_now=%t confidence=%s evidence=%q reason=%q workspace=%s",
+					classification.Intent, classification.ExecuteNow, classification.Confidence, classification.Evidence, classification.Reason, runtime.workspace)
+			}
+		case resolution.Intent != config.WritingIntentAuto:
+			req.WritingIntent = resolution.Intent
+		}
+	}
 	if !agent.ShouldInlineWritingSkill(*req) {
-		log.Printf("[agent-task] selected writing skill name=%s writing_intent=%s delivery=dynamic reason=non_writing_or_ambiguous workspace=%s",
-			req.WritingSkill, req.WritingIntent, runtime.workspace)
+		log.Printf("[agent-task] selected writing skill name=%s writing_intent=%s delivery=dynamic reason=%s workspace=%s",
+			req.WritingSkill, req.WritingIntent, firstNonEmpty(intentReason, "non_execution"), runtime.workspace)
 		return nil
 	}
 	backend := novaskills.NewAgentBackend(

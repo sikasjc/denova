@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import type { WritingIntent, WritingQuickActionSettings } from './types'
+import type { WritingQuickActionSettings } from './types'
 import {
   resolveWritingQuickActions,
   writingQuickActionLabel,
@@ -13,14 +13,6 @@ import {
 const MAX_WRITING_QUICK_ACTIONS = 24
 const MAX_QUICK_ACTION_LABEL_LENGTH = 80
 const MAX_QUICK_ACTION_PROMPT_LENGTH = 262144
-const WRITING_INTENT_OPTIONS: Array<{ value: WritingIntent | ''; labelKey: string }> = [
-  { value: '', labelKey: 'settings.quickActions.intentAuto' },
-  { value: 'planning', labelKey: 'settings.quickActions.intentPlanning' },
-  { value: 'prose_generation', labelKey: 'settings.quickActions.intentProseGeneration' },
-  { value: 'prose_revision', labelKey: 'settings.quickActions.intentProseRevision' },
-  { value: 'review_application', labelKey: 'settings.quickActions.intentReviewApplication' },
-  { value: 'analysis', labelKey: 'settings.quickActions.intentAnalysis' },
-]
 
 export function WritingQuickActionsEditor({
   actions,
@@ -166,19 +158,6 @@ export function WritingQuickActionsEditor({
                   placeholder={t('settings.quickActions.promptPlaceholder')}
                   onChange={(event) => updateAction(index, { prompt: event.target.value })}
                 />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-[11px] text-[var(--nova-text-muted)]">{t('settings.quickActions.intent')}</span>
-                <select
-                  aria-label={t('settings.quickActions.intent')}
-                  value={action.intent ?? ''}
-                  className="nova-field h-8 rounded-[var(--nova-radius)] border px-2.5 text-xs outline-none focus:border-[var(--nova-field-focus-border)]"
-                  onChange={(event) => updateAction(index, { intent: event.target.value as WritingIntent || undefined })}
-                >
-                  {WRITING_INTENT_OPTIONS.map((option) => (
-                    <option key={option.value || 'auto'} value={option.value}>{t(option.labelKey)}</option>
-                  ))}
-                </select>
               </label>
             </div>
           </div>

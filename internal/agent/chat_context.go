@@ -56,7 +56,7 @@ func appendWritingSkillLoadHint(message, skillName string, logs ...*contextBuild
 	sb.WriteString("- 若本轮请求涉及小说正文续写、章节正文创作、正文重写或润色，且当前 Agent 已启用 `skill` 工具，请先调用 `skill` 工具加载 `")
 	sb.WriteString(skillName)
 	sb.WriteString("`，读取完整 SKILL.md 后再执行。\n")
-	sb.WriteString("- 若本轮请求是问答、分析、整理、大纲/设定讨论、配置或规划，不要加载 Writing Skill，直接按本轮请求处理。\n")
+	sb.WriteString("- 若本轮请求是问答、分析、整理、大纲/设定讨论、配置、规划、征求建议，或仍在讨论是否写/怎么写，不要加载 Writing Skill，不要修改文件；先继续讨论并等待用户明确要求执行。即使消息提到“续写 / 改写 / 创作”等词，也不能把讨论对象误判成执行指令。\n")
 	sb.WriteString("- 在调用 `skill` 工具前，不要假装已经读取了该 Skill 的完整说明；写作范围仍只由用户本轮自然语言指令决定，不存在单独的 `writing_scope` 字段。\n")
 
 	addContextLog(logs, "注入规则", "Writing Skill 按需加载", sb.String()[len(message):], skillName)

@@ -415,7 +415,6 @@ export function AgentPanel({
         onOpenSettings={() => onOpenQuickActionSettings?.()}
       />
     ),
-    showWritingIntentControl: true,
     writingSkillControl: (
       <WritingComposerSettingsMenu
         enabled={Boolean(workspace) && !persistedSettings.loading}

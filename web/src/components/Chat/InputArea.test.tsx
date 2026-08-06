@@ -5,29 +5,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { InputArea } from './InputArea'
 
 describe('InputArea command menu', () => {
-  it('shows the current Writing intent and lets the user change it before sending', async () => {
-    const user = userEvent.setup()
-    const handleSend = vi.fn()
-    render(
-      <InputArea
-        onSend={handleSend}
-        disabled={false}
-        showWritingIntentControl
-        inputPrefill={{ prompt: 'draft chapter', nonce: 1, writingIntent: 'prose_generation' }}
-      />,
-    )
-
-    expect(await screen.findByRole('combobox', { name: '写作任务类型' })).toHaveTextContent('正文创作')
-    await user.click(screen.getByRole('combobox', { name: '写作任务类型' }))
-    await user.click(screen.getByRole('option', { name: '正文修订' }))
-    await user.click(screen.getByRole('button', { name: '发送' }))
-
-    expect(handleSend).toHaveBeenCalledWith('draft chapter', 'prose_revision')
-  })
-
-  it('keeps Writing intent controls out of non-Writing composers', () => {
-    render(<InputArea onSend={vi.fn()} disabled={false} />)
-
+  it('does not expose the internal Writing intent classifier as a composer control', () => {
+    render(<InputArea onSend={vi.fn()} disabled={false} inputPrefill={{ prompt: 'draft chapter', nonce: 1, writingIntent: 'prose_generation' }} />)
     expect(screen.queryByRole('combobox', { name: '写作任务类型' })).not.toBeInTheDocument()
   })
 

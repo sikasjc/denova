@@ -108,6 +108,23 @@ func TestBuiltinWritingPresetInstructionsCoverTaskDelegation(t *testing.T) {
 	}
 }
 
+func TestNovelStandardAlwaysDelegatesStructuredReviewFeedbackToReviewer(t *testing.T) {
+	standard := readBuiltinWritingPreset(t, "novel-standard")
+	for _, required := range []string{
+		"结构化审阅意见是 reviewer 的重点输入",
+		"不等同于已经完成的独立审稿",
+		"所有正式写作任务都必须通过 `task` 委派一次 `reviewer`",
+		"不得静默跳过",
+	} {
+		if !strings.Contains(standard, required) {
+			t.Fatalf("novel-standard missing required reviewer policy %q", required)
+		}
+	}
+	if strings.Contains(standard, "默认视为本轮 review 结果") {
+		t.Fatalf("novel-standard must not treat structured review feedback as a replacement for reviewer")
+	}
+}
+
 func TestBuiltinWritingPresetChoreographyPolicy(t *testing.T) {
 	lite := readBuiltinWritingPreset(t, "novel-lite")
 	if !strings.Contains(lite, "禁止启动 reviewer、fixer、task 或 General SubAgent") {
