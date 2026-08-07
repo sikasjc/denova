@@ -217,7 +217,9 @@ func PrependFinalUserSource(agentMessage, title, content string) string {
 	sb.WriteString("\n\n")
 	sb.WriteString("状态快照可能过期，以工具读取为准。\n\n")
 	sb.WriteString(content)
-	sb.WriteString("\n\n---\n\n# 本轮用户请求（最高优先级）\n\n")
+	sb.WriteString("\n\n---\n\n")
+	sb.WriteString(finalUserEnvelopeHeading(agentMessage))
+	sb.WriteString("\n\n")
 	sb.WriteString(strings.TrimSpace(agentMessage))
 	return sb.String()
 }
@@ -252,9 +254,18 @@ func PrependFinalUserSources(agentMessage string, sources []Source) string {
 		sb.WriteString("状态快照可能过期，以工具读取为准。\n\n")
 		sb.WriteString(strings.TrimSpace(source.Content))
 	}
-	sb.WriteString("\n\n---\n\n# 本轮用户请求（最高优先级）\n\n")
+	sb.WriteString("\n\n---\n\n")
+	sb.WriteString(finalUserEnvelopeHeading(agentMessage))
+	sb.WriteString("\n\n")
 	sb.WriteString(strings.TrimSpace(agentMessage))
 	return sb.String()
+}
+
+func finalUserEnvelopeHeading(agentMessage string) string {
+	if strings.Contains(agentMessage, "# 本轮用户请求（最高优先级）") {
+		return "# 本轮规则、附件与请求"
+	}
+	return "# 本轮用户请求（最高优先级）"
 }
 
 func cloneMessages(messages []*schema.Message) []*schema.Message {

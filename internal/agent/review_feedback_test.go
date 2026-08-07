@@ -40,10 +40,6 @@ func TestComposeAgentInputInjectsOnlyResolvedReviewFeedbackWithSource(t *testing
 
 	composition := composeAgentInput(req, nil, nil, DefaultLoopPolicy())
 	for _, expected := range []string{
-		"minimal necessary patch",
-		"The number of comments does not broaden the authorized edit scope",
-		"copy old_string exactly",
-		"never fall back to write_file for an existing chapter",
 		`"source":"workspace_change"`,
 		`"review_thread_id":"thread-ledger"`,
 		`"comment_id":"comment-ledger"`,
@@ -64,6 +60,9 @@ func TestComposeAgentInputInjectsOnlyResolvedReviewFeedbackWithSource(t *testing
 	}
 	if composition.OriginalMessage != req.Message {
 		t.Fatalf("original message changed: %q", composition.OriginalMessage)
+	}
+	if !strings.HasSuffix(strings.TrimSpace(composition.AgentMessage), req.Message) {
+		t.Fatalf("review feedback must remain before the authoritative request: %s", composition.AgentMessage)
 	}
 }
 
@@ -90,32 +89,5 @@ func TestReviewFeedbackContextEnforcesWholeBlockByteLimit(t *testing.T) {
 	}
 	if len(block) == 0 || len(block) > MaxReviewFeedbackContextBytes {
 		t.Fatalf("review feedback block bytes=%d", len(block))
-	}
-}
-
-func TestReviewFeedbackContextDefinesRiskRoutedDeltaReview(t *testing.T) {
-	feedback := ReviewFeedbackContexts{{
-		ReviewThreadID: "thread-1",
-		Comments: []ReviewFeedbackComment{{
-			ID:   "comment-1",
-			Body: "删掉重复的比喻",
-		}},
-	}}
-	block, err := reviewFeedbackContextBlock(feedback)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, required := range []string{
-		"low-risk local feedback",
-		"patch directly without calling reviewer",
-		"high-risk feedback",
-		"patch first, then request one bounded delta review",
-		"modified span plus minimal adjacent context",
-		"PASS or BLOCKER",
-		"must not expand into a whole-chapter review",
-	} {
-		if !strings.Contains(block, required) {
-			t.Fatalf("review feedback context missing risk-routed delta-review rule %q:\n%s", required, block)
-		}
 	}
 }

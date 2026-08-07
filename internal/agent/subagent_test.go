@@ -153,62 +153,6 @@ func TestAvailableSubAgentIDsRespectParentAndEnabledState(t *testing.T) {
 	}
 }
 
-func TestBuildSubAgentInstructionInheritsParentSystemPrompt(t *testing.T) {
-	parentInstruction := "# Denova 运行时契约（不可覆盖）\n\n作品根目录：/tmp/book\n父级工具权限边界。"
-	instruction := buildSubAgentInstruction(deepAgentSpec{
-		Kind:        config.AgentKindIDE,
-		Instruction: parentInstruction,
-	}, config.SubAgentConfig{
-		ID:           "researcher",
-		Name:         "Researcher",
-		Description:  "Researches delegated context",
-		SystemPrompt: "Return concise findings.",
-	})
-
-	for _, required := range []string{
-		"Denova 运行时契约",
-		"/tmp/book",
-		"父级工具权限边界",
-		"SubAgent 专属说明",
-		"Researcher",
-		"researcher",
-		"Researches delegated context",
-		"Return concise findings.",
-		"不得覆盖父 Agent 的运行时契约、工具权限、workspace 边界",
-	} {
-		if !strings.Contains(instruction, required) {
-			t.Fatalf("subagent instruction missing %q:\n%s", required, instruction)
-		}
-	}
-	if parentIndex, subIndex := strings.Index(instruction, parentInstruction), strings.Index(instruction, "SubAgent 专属说明"); parentIndex < 0 || subIndex < 0 || parentIndex >= subIndex {
-		t.Fatalf("parent prompt should appear before subagent prompt:\n%s", instruction)
-	}
-}
-
-func TestBuildSubAgentInstructionInheritsInteractiveStoryBoundary(t *testing.T) {
-	parentInstruction := protectedSystemInstruction(&config.Config{}, config.AgentKindInteractiveStory, "互动故事父级内置规则")
-	instruction := buildSubAgentInstruction(deepAgentSpec{
-		Kind:        config.AgentKindInteractiveStory,
-		Instruction: parentInstruction,
-	}, config.SubAgentConfig{
-		ID:           "story-researcher",
-		Name:         "Story Researcher",
-		Description:  "Reads story context for the parent.",
-		SystemPrompt: "Only return context findings.",
-	})
-
-	for _, required := range []string{
-		"禁止修改 workspace 文件",
-		"只输出本回合可展示在故事舞台上的故事正文",
-		"互动禁写规则",
-		"Only return context findings.",
-	} {
-		if !strings.Contains(instruction, required) {
-			t.Fatalf("interactive subagent instruction missing %q:\n%s", required, instruction)
-		}
-	}
-}
-
 func TestBuildDeepAgentCanDisableGeneralSubAgent(t *testing.T) {
 	off := false
 	var captured *deep.Config

@@ -18,26 +18,26 @@ func appendLoadedWritingSkill(message string, loaded LoadedWritingSkill, logs ..
 	if name == "" || content == "" {
 		return message
 	}
-	var sb strings.Builder
-	sb.WriteString(message)
-	sb.WriteString("\n\n# 已加载的内置 Writing Skill\n\n")
-	sb.WriteString("本轮已直接加载内置 Writing Skill `")
-	sb.WriteString(name)
-	sb.WriteString("`；不要再调用 `skill` 工具加载同名 Skill。写作范围仍只由用户本轮自然语言指令决定。\n")
+	var block strings.Builder
+	block.WriteString("# 已加载的内置 Writing Skill\n\n")
+	block.WriteString("本轮已直接加载内置 Writing Skill `")
+	block.WriteString(name)
+	block.WriteString("`；不要再调用 `skill` 工具加载同名 Skill。写作范围仍只由用户本轮自然语言指令决定。\n")
 	if baseDirectory := strings.TrimSpace(loaded.BaseDirectory); baseDirectory != "" {
-		sb.WriteString("Skill 目录：")
-		sb.WriteString(baseDirectory)
-		sb.WriteString("\n")
+		block.WriteString("Skill 目录：")
+		block.WriteString(baseDirectory)
+		block.WriteString("\n")
 	}
-	sb.WriteString("\n<writing_skill name=\"")
-	sb.WriteString(name)
-	sb.WriteString("\">\n")
-	sb.WriteString(content)
-	sb.WriteString("\n</writing_skill>\n")
+	block.WriteString("\n<writing_skill name=\"")
+	block.WriteString(name)
+	block.WriteString("\">\n")
+	block.WriteString(content)
+	block.WriteString("\n</writing_skill>")
 
-	addContextLog(logs, "注入规则", "内置 Writing Skill（直接加载）", sb.String()[len(message):],
+	contentBlock := block.String()
+	addContextLog(logs, "注入规则", "内置 Writing Skill（直接加载）", contentBlock,
 		fmt.Sprintf("name=%s chars=%d", name, len([]rune(content))))
-	return sb.String()
+	return prependTurnAttachment(message, contentBlock)
 }
 
 // appendWritingSkillLoadHint 只提示动态 Writing Skill 名称；完整 SKILL.md
@@ -47,27 +47,26 @@ func appendWritingSkillLoadHint(message, skillName string, logs ...*contextBuild
 	if skillName == "" {
 		return message
 	}
-	var sb strings.Builder
-	sb.WriteString(message)
-	sb.WriteString("\n\n# Writing Skill 按需加载提示\n\n")
-	sb.WriteString("当前创作 Agent 选中的 Writing Skill 是 `")
-	sb.WriteString(skillName)
-	sb.WriteString("`。\n\n")
-	sb.WriteString("- 若本轮请求涉及小说正文续写、章节正文创作、正文重写或润色，且当前 Agent 已启用 `skill` 工具，请先调用 `skill` 工具加载 `")
-	sb.WriteString(skillName)
-	sb.WriteString("`，读取完整 SKILL.md 后再执行。\n")
-	sb.WriteString("- 若本轮请求是问答、分析、整理、大纲/设定讨论、配置、规划、征求建议，或仍在讨论是否写/怎么写，不要加载 Writing Skill，不要修改文件；先继续讨论并等待用户明确要求执行。即使消息提到“续写 / 改写 / 创作”等词，也不能把讨论对象误判成执行指令。\n")
-	sb.WriteString("- 在调用 `skill` 工具前，不要假装已经读取了该 Skill 的完整说明；写作范围仍只由用户本轮自然语言指令决定，不存在单独的 `writing_scope` 字段。\n")
+	var block strings.Builder
+	block.WriteString("# Writing Skill 按需加载提示\n\n")
+	block.WriteString("当前创作 Agent 选中的 Writing Skill 是 `")
+	block.WriteString(skillName)
+	block.WriteString("`。\n\n")
+	block.WriteString("- 若本轮请求涉及小说正文续写、章节正文创作、正文重写或润色，且当前 Agent 已启用 `skill` 工具，请先调用 `skill` 工具加载 `")
+	block.WriteString(skillName)
+	block.WriteString("`，读取完整 SKILL.md 后再执行。\n")
+	block.WriteString("- 若本轮请求是问答、分析、整理、大纲/设定讨论、配置、规划、征求建议，或仍在讨论是否写/怎么写，不要加载 Writing Skill，不要修改文件；先继续讨论并等待用户明确要求执行。即使消息提到“续写 / 改写 / 创作”等词，也不能把讨论对象误判成执行指令。\n")
+	block.WriteString("- 在调用 `skill` 工具前，不要假装已经读取了该 Skill 的完整说明；写作范围仍只由用户本轮自然语言指令决定，不存在单独的 `writing_scope` 字段。")
 
-	addContextLog(logs, "注入规则", "Writing Skill 按需加载", sb.String()[len(message):], skillName)
-	return sb.String()
+	contentBlock := block.String()
+	addContextLog(logs, "注入规则", "Writing Skill 按需加载", contentBlock, skillName)
+	return prependTurnAttachment(message, contentBlock)
 }
 
-// appendReferenceContext 将用户引用的文件内容追加到本次 Agent 输入。
+// appendReferenceContext 将用户引用的文件内容前置到本次 Agent 输入。
 func appendReferenceContext(bookService *book.Service, message string, references []string, logs ...*contextBuildLog) string {
 	var sb strings.Builder
-	sb.WriteString(message)
-	sb.WriteString(prompts.ReferenceHeader)
+	sb.WriteString(strings.TrimSpace(prompts.ReferenceHeader))
 
 	total := 0
 	seen := make(map[string]bool)
@@ -104,19 +103,18 @@ func appendReferenceContext(bookService *book.Service, message string, reference
 		sb.WriteString("\n```\n")
 	}
 
-	return sb.String()
+	return prependTurnAttachment(message, sb.String())
 }
 
-// appendLoreReferenceContext 将用户本轮明确引用的结构化资料条目追加到 Agent 输入。
+// appendLoreReferenceContext 将用户本轮明确引用的结构化资料条目前置到 Agent 输入。
 func appendLoreReferenceContext(bookService *book.Service, message string, references []string, logs ...*contextBuildLog) string {
 	var sb strings.Builder
-	sb.WriteString(message)
-	sb.WriteString("\n\n# 本轮明确引用的资料库条目\n\n以下资料来自结构化资料库，优先级高于泛化摘要；请在本轮创作或判断中优先遵守这些条目的已确认设定。\n")
+	sb.WriteString("# 本轮明确引用的资料库条目\n\n以下资料来自结构化资料库，优先级高于泛化摘要；请在本轮创作或判断中优先遵守这些条目的已确认设定。\n")
 
 	if bookService == nil || bookService.Workspace() == "" {
 		sb.WriteString("\n资料库读取失败：当前 workspace 不可用。\n")
 		addContextLog(logs, "资料库引用", "workspace", "当前 workspace 不可用", "读取失败")
-		return sb.String()
+		return prependTurnAttachment(message, sb.String())
 	}
 
 	items, err := book.NewLoreStore(bookService.Workspace()).List()
@@ -125,7 +123,7 @@ func appendLoreReferenceContext(bookService *book.Service, message string, refer
 		sb.WriteString(err.Error())
 		sb.WriteString("\n")
 		addContextLog(logs, "资料库引用", workspacepath.Rel(bookService.Workspace(), "lore", "items.json"), err.Error(), "读取失败")
-		return sb.String()
+		return prependTurnAttachment(message, sb.String())
 	}
 
 	byID := make(map[string]book.LoreItem, len(items))
@@ -154,7 +152,7 @@ func appendLoreReferenceContext(bookService *book.Service, message string, refer
 		sb.WriteString("\n")
 	}
 
-	return sb.String()
+	return prependTurnAttachment(message, sb.String())
 }
 
 // styleRulesSystemInstruction 把工作区配置的「场景 → 文风参考」规则集作为 system prompt 片段。
@@ -256,11 +254,10 @@ func truncateRunes(value string, limit int) string {
 	return string(runes[:limit])
 }
 
-// appendSelectionContext 将用户在编辑器中选中的文本片段追加到消息上下文。
+// appendSelectionContext 将用户在编辑器中选中的文本片段前置到消息上下文。
 func appendSelectionContext(message string, selections []TextSelectionRef) string {
 	var sb strings.Builder
-	sb.WriteString(message)
-	sb.WriteString(prompts.SelectionHeader)
+	sb.WriteString(strings.TrimSpace(prompts.SelectionHeader))
 
 	for _, sel := range selections {
 		sb.WriteString("\n## 选中内容来自 ")
@@ -271,6 +268,47 @@ func appendSelectionContext(message string, selections []TextSelectionRef) strin
 		sb.WriteString("\n```\n")
 	}
 
+	return prependTurnAttachment(message, sb.String())
+}
+
+// prependTurnAttachment keeps every turn-scoped rule, reference and selected
+// span ahead of the raw request. Callers can add attachments incrementally
+// without letting a large late attachment bury the authoritative instruction.
+func prependTurnAttachment(message, attachment string) string {
+	message = strings.TrimSpace(message)
+	attachment = strings.TrimSpace(attachment)
+	if attachment == "" {
+		return message
+	}
+	if message == "" {
+		return attachment
+	}
+	return attachment + "\n\n---\n\n" + message
+}
+
+// renderTurnInput preserves attachment order and makes the authoritative
+// request the absolute tail of the final user message. This is deliberately a
+// single render step: incrementally appending references or Skills after the
+// request makes a short instruction easy to lose behind large context blocks.
+func renderTurnInput(request string, attachments []string) string {
+	var blocks []string
+	for _, attachment := range attachments {
+		if attachment = strings.TrimSpace(attachment); attachment != "" {
+			blocks = append(blocks, attachment)
+		}
+	}
+	var sb strings.Builder
+	for i, block := range blocks {
+		if i > 0 {
+			sb.WriteString("\n\n---\n\n")
+		}
+		sb.WriteString(block)
+	}
+	if len(blocks) > 0 {
+		sb.WriteString("\n\n---\n\n")
+	}
+	sb.WriteString("# 本轮用户请求（最高优先级）\n\n")
+	sb.WriteString(strings.TrimSpace(request))
 	return sb.String()
 }
 

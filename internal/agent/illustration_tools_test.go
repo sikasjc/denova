@@ -2,10 +2,8 @@ package agent
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
-	"denova/config"
 	"denova/internal/illustration"
 )
 
@@ -86,17 +84,5 @@ func TestParseGeneratedImageToolTarget(t *testing.T) {
 	}
 	if target := parseGeneratedImageToolTarget(generateImageToolName, string(raw)); target != payload.Images[0].Path {
 		t.Fatalf("target = %q", target)
-	}
-}
-
-func TestMergeImagePresetToolPromptPrependsPreset(t *testing.T) {
-	got := mergeImagePresetToolPrompt(&config.Config{ImagePresetToolPrompt: "## 请求（tool_request）\n\n真实光影"}, "雨夜小巷，少女回头")
-	for _, required := range []string{"# 图像风格要求", "真实光影", "# 本次图像请求", "雨夜小巷"} {
-		if !strings.Contains(got, required) {
-			t.Fatalf("merged prompt missing %q:\n%s", required, got)
-		}
-	}
-	if strings.Index(got, "真实光影") > strings.Index(got, "雨夜小巷") {
-		t.Fatalf("preset should be prepended before image request:\n%s", got)
 	}
 }

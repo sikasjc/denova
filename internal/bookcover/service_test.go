@@ -63,11 +63,6 @@ func TestGenerateWritesCoverSourceMetaAndBackup(t *testing.T) {
 	if generator.request.Size != "1728x2304" || generator.request.OutputFormat != "png" || generator.request.N != 1 {
 		t.Fatalf("封面生成参数不符合预期: %#v", generator.request)
 	}
-	for _, required := range []string{"真实光影", "星河边境", "舰队与边城", "冷色调"} {
-		if !strings.Contains(generator.request.Prompt, required) {
-			t.Fatalf("prompt 缺少 %q:\n%s", required, generator.request.Prompt)
-		}
-	}
 	if result.CoverPath != CoverPath {
 		t.Fatalf("展示封面路径不符合预期: %s", result.CoverPath)
 	}

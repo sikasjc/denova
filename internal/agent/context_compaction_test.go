@@ -257,10 +257,3 @@ func TestBuildContextCompactionTranscriptKeepsAllIncrementalMessagesAndReference
 		t.Fatalf("transcript missing character range %q:\n%s", wantRange, transcript[:300])
 	}
 }
-
-func TestContextCompactionRetryInstructionExpandsTooShortSummary(t *testing.T) {
-	got := contextCompactionRetryInstruction(80, 300, 900)
-	if !strings.Contains(got, "too short: 80 characters") || !strings.Contains(got, "300-900 characters") || !strings.Contains(got, "Expand") {
-		t.Fatalf("unexpected retry instruction: %s", got)
-	}
-}

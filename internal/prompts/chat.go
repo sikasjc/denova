@@ -5,8 +5,10 @@ import (
 	"strings"
 )
 
-// PlanMode 在用户消息前追加规划模式指令，让模型先提问和形成可审阅计划。
-func PlanMode(message string) string {
+// PlanModeRules returns the turn-scoped planning contract without embedding
+// the raw user request. Callers that assemble richer turn envelopes can keep
+// attachments first and place the authoritative request at the absolute end.
+func PlanModeRules() string {
 	return `[Plan Mode / 规划模式] 请先协作制定计划，不要直接执行。
 
 要求：
@@ -42,23 +44,29 @@ func PlanMode(message string) string {
 ## Key Changes
 - **关键方向**：用短 bullet 分组说明会怎么做。
 - **取舍**：只列影响执行的重点取舍，不写长段落。
-9. 不要在 <proposed_plan> 外输出执行结果。
-
-用户需求：
-` + message
+9. 不要在 <proposed_plan> 外输出执行结果。`
 }
 
-// ContextBoundary 在用户消息前追加上下文边界说明，强调当前请求才是“这次要做什么”，
-// 工作区/已确认小说状态是“背景是什么”，历史对话只能用于辅助理解。
-func ContextBoundary(message string) string {
+// PlanMode keeps the standalone helper compatible while sharing the same
+// request-last contract as the main turn assembler.
+func PlanMode(message string) string {
+	return PlanModeRules() + "\n\n用户需求：\n" + message
+}
+
+// ContextBoundaryRules emphasizes that attachments and history are evidence,
+// while the raw request at the bottom of the turn envelope defines the action.
+func ContextBoundaryRules() string {
 	return `[上下文边界]
 - 当前用户请求是“这次要做什么”，请只按本轮请求、显式 @ 引用、# 场景风格选择和编辑器选区行动。
 - 工作区与已确认的小说状态只用于判断“背景是什么”，不能替代本轮明确请求。
 - 历史对话只能辅助理解上下文，不要把上一轮的待办、工具意图或未完成动作当成本轮指令，除非用户在本轮明确延续。
-- 如果当前请求与历史看起来无关或冲突，以当前请求为准，不要继续执行上一轮的工具调用或修改。
+- 如果当前请求与历史或本轮附件看起来无关或冲突，以最末尾的当前请求为准，不要继续执行上一轮的工具调用或修改。`
+}
 
-本轮请求：
-` + message
+// ContextBoundary keeps the standalone helper aligned with the main
+// request-last turn envelope.
+func ContextBoundary(message string) string {
+	return ContextBoundaryRules() + "\n\n# 本轮用户请求（最高优先级）\n\n" + message
 }
 
 // InterruptedResume 描述上一轮异常中断的现场。
@@ -172,13 +180,13 @@ func StyleRulesInstruction(rules []StyleRule) string {
 }
 
 // ReferenceHeader 在用户 @ 引用文件块前追加的固定标题。
-const ReferenceHeader = "\n\n---\n以下是用户引用的文件：\n"
+const ReferenceHeader = "# 用户引用的文件\n\n以下文件由用户在本轮显式引用：\n"
 
 // ReferenceOverflowHint 引用内容总量超限时，提示后续文件未读取。
 const ReferenceOverflowHint = "引用内容总量已超过限制，后续文件未读取。\n"
 
 // SelectionHeader 在编辑器选中片段块前追加的固定标题。
-const SelectionHeader = "\n\n---\n以下是用户在编辑器中选中的文本片段，请针对这些内容进行操作：\n"
+const SelectionHeader = "# 编辑器选区\n\n以下文本由用户在本轮显式选中，请针对这些内容进行操作：\n"
 
 // UnknownToolMessage LLM 调用了不存在工具时回灌给模型的可读错误。
 func UnknownToolMessage(name string) string {

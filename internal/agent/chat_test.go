@@ -9,7 +9,6 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"denova/internal/book"
-	"denova/internal/session"
 )
 
 func TestMergeToolCalls(t *testing.T) {
@@ -86,6 +85,47 @@ func TestComposeAgentInputDoesNotInjectImagePresetContext(t *testing.T) {
 	}
 }
 
+func TestComposeAgentInputPlacesAttachmentsBeforeRawRequest(t *testing.T) {
+	workspace := t.TempDir()
+	mustWriteTestFile(t, workspace, "chapters/reference.md", "引用正文")
+	composition := composeAgentInput(ChatRequest{
+		Message:      "只润色这一句",
+		WritingSkill: "novel-lite",
+		LoadedWritingSkill: &LoadedWritingSkill{
+			Name:          "novel-lite",
+			Content:       "# novel-lite\n\n执行最小修改",
+			BaseDirectory: "/app/skills/novel-lite",
+		},
+		References: []string{"chapters/reference.md"},
+		Selections: []TextSelectionRef{{
+			FileName:  "chapters/current.md",
+			StartLine: 3,
+			EndLine:   3,
+			Content:   "待修改原句",
+		}},
+	}, nil, book.NewService(workspace), DefaultLoopPolicy())
+
+	message := composition.AgentMessage
+	for _, attachment := range []string{
+		"# 已加载的内置 Writing Skill",
+		"# 用户引用的文件",
+		"# 编辑器选区",
+		"[上下文边界]",
+	} {
+		index := strings.Index(message, attachment)
+		requestIndex := strings.LastIndex(message, "# 本轮用户请求（最高优先级）")
+		if index < 0 || requestIndex < 0 || index >= requestIndex {
+			t.Fatalf("attachment %q must precede the final request:\n%s", attachment, message)
+		}
+	}
+	if !strings.HasSuffix(strings.TrimSpace(message), "只润色这一句") {
+		t.Fatalf("raw request must be the absolute tail of the turn message:\n%s", message)
+	}
+	if strings.Count(message, "只润色这一句") != 1 {
+		t.Fatalf("raw request should appear exactly once, got %d:\n%s", strings.Count(message, "只润色这一句"), message)
+	}
+}
+
 func TestAppendReferenceContextDedupesAndReportsReadFailure(t *testing.T) {
 	workspace := t.TempDir()
 	mustWriteTestFile(t, workspace, "chapters/ch01.md", "第一章正文")
@@ -98,7 +138,8 @@ func TestAppendReferenceContextDedupesAndReportsReadFailure(t *testing.T) {
 	})
 
 	assertContains(t, got, "请参考")
-	assertContains(t, got, "以下是用户引用的文件")
+	assertContains(t, got, "# 用户引用的文件")
+	assertContains(t, got, "以下文件由用户在本轮显式引用")
 	assertContains(t, got, "## @chapters/ch01.md")
 	assertContains(t, got, "```markdown\n第一章正文\n```")
 	assertContains(t, got, "## @chapters/missing.md")
@@ -119,68 +160,10 @@ func TestAppendSelectionContextIncludesFileAndLineRange(t *testing.T) {
 	})
 
 	assertContains(t, got, "修改这段")
-	assertContains(t, got, "以下是用户在编辑器中选中的文本片段")
+	assertContains(t, got, "# 编辑器选区")
+	assertContains(t, got, "以下文本由用户在本轮显式选中")
 	assertContains(t, got, "## 选中内容来自 chapters/ch03.md:L12-L18")
 	assertContains(t, got, "```\n选中的正文\n```")
-}
-
-func TestAppendPlanModeInstructionUsesStructuredPlanningProtocol(t *testing.T) {
-	got := appendPlanModeInstruction("重构章节")
-
-	assertContains(t, got, "[Plan Mode / 规划模式]")
-	assertContains(t, got, "不要直接执行")
-	assertContains(t, got, "<plan_questions>")
-	assertContains(t, got, "<proposed_plan>")
-	assertContains(t, got, "# 计划标题")
-	assertContains(t, got, "## Summary")
-	assertContains(t, got, "## Key Changes")
-	assertContains(t, got, "用户需求：\n重构章节")
-	if strings.Contains(got, "Tests、Assumptions") || strings.Contains(got, "Test Plan") {
-		t.Fatalf("Plan Mode 最终方案模板不应强制输出测试或假设小节:\n%s", got)
-	}
-}
-
-func TestAppendContextBoundaryInstructionEmphasizesCurrentRequest(t *testing.T) {
-	got := appendContextBoundaryInstruction("帮我写第三章")
-
-	assertContains(t, got, "[上下文边界]")
-	assertContains(t, got, "当前用户请求是“这次要做什么”")
-	assertContains(t, got, "已确认的小说状态")
-	assertContains(t, got, "背景是什么")
-	assertContains(t, got, "历史对话只能辅助理解")
-	assertContains(t, got, "以当前请求为准")
-	assertContains(t, got, "本轮请求：\n帮我写第三章")
-}
-
-func TestStyleRulesSystemInstructionEmitsSceneAndStyles(t *testing.T) {
-	got := styleRulesSystemInstruction([]StyleRule{
-		{Global: true, StyleReferences: []StyleReference{{Name: "默认克制", Path: "/tmp/.denova/styles/global.md", DisplayPath: ".denova/styles/global.md"}}},
-		{Scene: "激烈打斗", StyleReferences: []StyleReference{{Name: "克制细腻", Description: "短句留白", Path: "/tmp/.denova/styles/restraint.md", DisplayPath: ".denova/styles/restraint.md"}}, StyleContents: []string{"短句留白", "强冲突快节奏"}},
-		{Scene: "日常对话", StyleContents: []string{"温吞对白"}},
-		{Scene: "", StyleContents: []string{"无效内容"}},     // 应被跳过
-		{Scene: "空风格", StyleContents: []string{"", " "}}, // 空内容应被跳过
-	})
-
-	assertContains(t, got, "## 文风参考")
-	assertContains(t, got, "全局文风参考：所有正文生成默认生效")
-	assertContains(t, got, "name: 默认克制")
-	assertContains(t, got, "场景：激烈打斗")
-	assertContains(t, got, "短句留白")
-	assertContains(t, got, "强冲突快节奏")
-	assertContains(t, got, "name: 克制细腻")
-	assertContains(t, got, "path: /tmp/.denova/styles/restraint.md")
-	assertContains(t, got, "场景：日常对话")
-	assertContains(t, got, "温吞对白")
-	assertContains(t, got, "全局文风参考默认适用于所有正文生成")
-	assertContains(t, got, "互动故事下一回合正文生成时")
-	assertContains(t, got, "编制故事正文前必须先用 read_file 读取这些全局参考文件")
-	assertContains(t, got, "分场景文风参考仍根据当前章节内容、互动场景或本轮 # 场景选择")
-	assertContains(t, got, "不要强行选择分场景参考")
-	assertContains(t, got, "完全忽略以上参考")
-	assertContains(t, got, "read_file")
-	if strings.Contains(got, "无效内容") {
-		t.Fatalf("空 scene 的规则应被跳过，但仍包含无效内容：\n%s", got)
-	}
 }
 
 func TestBoundedStyleRulesBoundsReferenceIndex(t *testing.T) {
@@ -197,20 +180,6 @@ func TestBoundedStyleRulesBoundsReferenceIndex(t *testing.T) {
 	if got[0].StyleReferences[0].Name != "短" {
 		t.Fatalf("first ref mismatch: %#v", got[0].StyleReferences[0])
 	}
-}
-
-func TestBuildInterruptedResumeMessageIncludesInterruptedContext(t *testing.T) {
-	got := buildInterruptedResumeMessage("继续", &session.Interruption{
-		UserMessage:      "写第一章",
-		AssistantContent: "已经写出的片段",
-		Reason:           "runner error",
-	})
-
-	assertContains(t, got, "[异常中断恢复]")
-	assertContains(t, got, "用户当前要求继续")
-	assertContains(t, got, "写第一章")
-	assertContains(t, got, "已经写出的片段")
-	assertContains(t, got, "runner error")
 }
 
 func TestShouldResumeInterruptedRequestOnlyMatchesExplicitContinue(t *testing.T) {

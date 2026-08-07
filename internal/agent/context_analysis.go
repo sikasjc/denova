@@ -804,36 +804,39 @@ func composeAgentInput(req ChatRequest, pending *session.Interruption, bookServi
 	if resumeInterruption != nil {
 		req.Message = buildInterruptedResumeMessage(req.Message, resumeInterruption)
 	}
-	agentMessage := req.Message
+	turnAttachments := make([]string, 0, 7)
 	contextLog := newContextBuildLog(policy.ContextLedger)
 	contextLog.add("用户输入", "本轮原始请求", originalMessage, "")
 	if resumeInterruption != nil {
 		contextLog.add("运行时恢复", "异常中断恢复上下文", req.Message, "包含上一轮原始请求、已生成助手内容和中断原因")
 	}
 	if req.PlanMode {
-		agentMessage = appendPlanModeInstruction(agentMessage)
-		contextLog.add("注入规则", "规划模式", prompts.PlanMode(""), "")
+		planRules := prompts.PlanModeRules()
+		turnAttachments = append(turnAttachments, planRules)
+		contextLog.add("注入规则", "规划模式", planRules, "")
 	}
 	if req.LoadedWritingSkill != nil {
-		agentMessage = appendLoadedWritingSkill(agentMessage, *req.LoadedWritingSkill, contextLog)
+		turnAttachments = append(turnAttachments, appendLoadedWritingSkill("", *req.LoadedWritingSkill, contextLog))
 	} else if strings.TrimSpace(req.WritingSkill) != "" {
-		agentMessage = appendWritingSkillLoadHint(agentMessage, req.WritingSkill, contextLog)
+		turnAttachments = append(turnAttachments, appendWritingSkillLoadHint("", req.WritingSkill, contextLog))
 	}
 	if len(req.References) > 0 {
-		agentMessage = appendReferenceContext(bookService, agentMessage, req.References, contextLog)
+		turnAttachments = append(turnAttachments, appendReferenceContext(bookService, "", req.References, contextLog))
 	}
 	if len(req.LoreReferences) > 0 {
-		agentMessage = appendLoreReferenceContext(bookService, agentMessage, req.LoreReferences, contextLog)
+		turnAttachments = append(turnAttachments, appendLoreReferenceContext(bookService, "", req.LoreReferences, contextLog))
 	}
 	if len(req.Selections) > 0 {
-		agentMessage = appendSelectionContext(agentMessage, req.Selections)
+		turnAttachments = append(turnAttachments, appendSelectionContext("", req.Selections))
 		contextLog.addSelections(req.Selections)
 	}
 	if !req.ResolvedReviewFeedback.Empty() {
-		agentMessage = appendReviewFeedbackContext(agentMessage, req.ResolvedReviewFeedback, contextLog)
+		turnAttachments = append(turnAttachments, appendReviewFeedbackContext("", req.ResolvedReviewFeedback, contextLog))
 	}
-	agentMessage = appendContextBoundaryInstruction(agentMessage)
-	contextLog.add("注入规则", "上下文边界", prompts.ContextBoundary(""), "")
+	boundaryRules := prompts.ContextBoundaryRules()
+	turnAttachments = append(turnAttachments, boundaryRules)
+	contextLog.add("注入规则", "上下文边界", boundaryRules, "")
+	agentMessage := renderTurnInput(req.Message, turnAttachments)
 	return agentInputComposition{
 		OriginalMessage:    originalMessage,
 		Request:            req,

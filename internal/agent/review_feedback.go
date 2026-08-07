@@ -110,14 +110,9 @@ func appendReviewFeedbackContext(message string, feedback ReviewFeedbackContexts
 		return message
 	}
 
-	var sb strings.Builder
-	sb.Grow(len(message) + len(block))
-	sb.WriteString(message)
-	sb.WriteString(block)
-
 	note := fmt.Sprintf("selections=%d comments=%d max_bytes=%d", len(feedback), feedback.CommentCount(), MaxReviewFeedbackContextBytes)
 	addContextLog(logs, "Review Feedback", "用户明确引用的审阅意见", block, note)
-	return sb.String()
+	return prependTurnAttachment(message, block)
 }
 
 // normalized drops empty contexts and canonicalizes each source so callers

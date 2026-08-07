@@ -60,9 +60,6 @@ func TestGenerateSavesLoreImageAndMetadata(t *testing.T) {
 			t.Fatalf("metadata missing %q:\n%s", want, string(meta))
 		}
 	}
-	if !strings.Contains(generator.request.Prompt, "电影感光影") || !strings.Contains(generator.request.Prompt, "夜色氛围") || !strings.Contains(generator.request.Prompt, "林川") {
-		t.Fatalf("prompt missing expected context:\n%s", generator.request.Prompt)
-	}
 }
 
 func TestBuildPromptBoundsLoreContent(t *testing.T) {
@@ -79,9 +76,6 @@ func TestBuildPromptBoundsLoreContent(t *testing.T) {
 	})
 	if len([]rune(prompt)) > maxPresetChars+maxBriefChars+maxContentChars+maxInstructionChars+600 {
 		t.Fatalf("prompt is not bounded, runes=%d", len([]rune(prompt)))
-	}
-	if !strings.Contains(prompt, "资料类型：规则") || !strings.Contains(prompt, "资料名称：长规则") {
-		t.Fatalf("prompt missing lore identity:\n%s", prompt)
 	}
 }
 

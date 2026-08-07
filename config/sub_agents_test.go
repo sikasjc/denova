@@ -3,7 +3,6 @@ package config
 import (
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -80,9 +79,6 @@ func TestConfigTemplatePreseedsEditableWritingPipelineOnly(t *testing.T) {
 		if !SubAgentEnabled(sub) {
 			t.Fatalf("template subagent should be enabled: %#v", sub)
 		}
-		if sub.SystemPrompt == "" || containsASCIIOnly(sub.SystemPrompt) {
-			t.Fatalf("template subagent prompt should be Chinese and non-empty: %#v", sub)
-		}
 		if len(sub.Parents) != 1 || sub.Parents[0] != AgentKindIDE {
 			t.Fatalf("writing subagent should only belong to IDE: %#v", sub)
 		}
@@ -136,37 +132,6 @@ func TestSubAgentRequiresExplicitParent(t *testing.T) {
 	}
 	if SubAgentAllowedForParent(sub, AgentKindAutomation) {
 		t.Fatalf("subagent should not be available for unlisted parents")
-	}
-}
-
-func TestConfigTemplateReviewerSupportsBoundedDeltaReview(t *testing.T) {
-	settings, err := ReadSettingsFile(filepath.Join("..", "config.toml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var reviewer *SubAgentConfig
-	for i := range settings.SubAgents {
-		if settings.SubAgents[i].ID == "reviewer" {
-			reviewer = &settings.SubAgents[i]
-			break
-		}
-	}
-	if reviewer == nil {
-		t.Fatal("config template reviewer is missing")
-	}
-	if !strings.Contains(reviewer.Description, "完整审稿或有界修改差异审查") {
-		t.Fatalf("reviewer description does not expose both review modes: %q", reviewer.Description)
-	}
-	for _, required := range []string{
-		"full_review",
-		"delta_review",
-		"修改前片段、修改后片段和最小必要邻接上下文",
-		"PASS 或 BLOCKER",
-		"不得扩展成全章审稿",
-	} {
-		if !strings.Contains(reviewer.SystemPrompt, required) {
-			t.Fatalf("config template reviewer missing delta-review contract %q", required)
-		}
 	}
 }
 

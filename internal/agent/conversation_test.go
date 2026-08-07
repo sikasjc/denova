@@ -183,6 +183,71 @@ func TestSessionConversationPlacesWorkspaceContextsAfterHistory(t *testing.T) {
 	}
 }
 
+func TestSessionConversationKeepsRawRequestAtAbsoluteTailAfterWorkspaceContext(t *testing.T) {
+	store, err := session.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := store.GetOrCreate("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sess.Append(schema.UserMessage("上一轮请求")); err != nil {
+		t.Fatal(err)
+	}
+	if err := sess.Append(schema.AssistantMessage("上一轮回答", nil)); err != nil {
+		t.Fatal(err)
+	}
+
+	composition := composeAgentInput(ChatRequest{
+		Message:      "继续下一章",
+		WritingSkill: "novel-standard",
+		LoadedWritingSkill: &LoadedWritingSkill{
+			Name:          "novel-standard",
+			Content:       "# novel-standard\n\n执行正式写作流程",
+			BaseDirectory: "/app/skills/novel-standard",
+		},
+	}, nil, nil, DefaultLoopPolicy())
+	conversation := NewSessionConversationForAgentWithRuntimeContexts(
+		sess,
+		&config.Config{},
+		config.AgentKindIDE,
+		"当前作品基础上下文",
+		"## 当前大纲\n\n大纲内容",
+		"当前作品动态上下文",
+		"## 当前进度\n\n进度内容",
+	)
+	messages, err := conversation.PrepareMessages(composition.OriginalMessage, composition.AgentMessage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 3 {
+		t.Fatalf("messages length = %d, want 3: %#v", len(messages), messages)
+	}
+	final := messages[len(messages)-1].Content
+	for _, required := range []string{
+		"# 当前作品基础上下文",
+		"# 当前作品动态上下文",
+		"# 本轮规则、附件与请求",
+		"# 已加载的内置 Writing Skill",
+		"[上下文边界]",
+		"# 本轮用户请求（最高优先级）",
+	} {
+		if !strings.Contains(final, required) {
+			t.Fatalf("final model message missing %q:\n%s", required, final)
+		}
+	}
+	if !strings.HasSuffix(strings.TrimSpace(final), "继续下一章") {
+		t.Fatalf("raw request must be the absolute tail of the final model message:\n%s", final)
+	}
+	if strings.Count(final, "继续下一章") != 1 {
+		t.Fatalf("raw request should appear exactly once, got %d:\n%s", strings.Count(final, "继续下一章"), final)
+	}
+	if strings.Count(final, "# 本轮用户请求（最高优先级）") != 1 {
+		t.Fatalf("authoritative request heading should appear exactly once:\n%s", final)
+	}
+}
+
 func TestSessionConversationWorkspaceEditsPreserveHistoryPrefix(t *testing.T) {
 	store, err := session.NewStore(t.TempDir())
 	if err != nil {
