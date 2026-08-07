@@ -460,28 +460,20 @@ func TestIDEContextAnalysisSplitsStableAndDynamicWorkspaceState(t *testing.T) {
 	if len(analysis.ContextMessages) == 0 {
 		t.Fatal("context analysis should include final model messages")
 	}
-	first := analysis.ContextMessages[0]
-	if first.Source != "稳定作品上下文" || first.Title != "稳定作品上下文" {
-		t.Fatalf("first message should carry stable workspace state: %#v", first)
-	}
-	for _, want := range []string{"# 稳定作品上下文", "主角进入废城", "## 角色小标题", "林川长期设定"} {
-		if !strings.Contains(first.Content, want) {
-			t.Fatalf("stable message missing %q:\n%s", want, first.Content)
-		}
-	}
-	for _, notWant := range []string{"当前进度：抵达废城入口", "章节组：探索废城", "chapters/ch0001-开局.md", "林川：警惕"} {
-		if strings.Contains(first.Content, notWant) {
-			t.Fatalf("stable message should not include dynamic state %q:\n%s", notWant, first.Content)
-		}
-	}
 	final := analysis.ContextMessages[len(analysis.ContextMessages)-1]
-	if final.Source != "本轮上下文" || final.Title != "动态作品状态与本轮用户请求" {
-		t.Fatalf("final message should carry dynamic workspace state label: %#v", final)
+	if final.Source != "本轮上下文" || final.Title != "作品上下文与本轮用户请求" {
+		t.Fatalf("final message should carry the assembled workspace context label: %#v", final)
 	}
-	for _, want := range []string{"# 本轮动态作品状态", "章节组：探索废城", "chapters/ch0001-开局.md", "当前进度：抵达废城入口", "林川：警惕", "## IDE 当前状态", "当前聚焦文件：chapters/ch0001-开局.md", "当前打开文件：chapters/ch0001-开局.md、setting/progress.md", "# 本轮用户请求（最高优先级）"} {
+	for _, want := range []string{"# 稳定作品上下文", "主角进入废城", "## 角色小标题", "林川长期设定", "# 本轮动态作品状态", "章节组：探索废城", "chapters/ch0001-开局.md", "当前进度：抵达废城入口", "林川：警惕", "## IDE 当前状态", "当前聚焦文件：chapters/ch0001-开局.md", "当前打开文件：chapters/ch0001-开局.md、setting/progress.md", "# 本轮用户请求（最高优先级）"} {
 		if !strings.Contains(final.Content, want) {
 			t.Fatalf("final message missing %q:\n%s", want, final.Content)
 		}
+	}
+	stableIndex := strings.Index(final.Content, "# 稳定作品上下文")
+	dynamicIndex := strings.Index(final.Content, "# 本轮动态作品状态")
+	requestIndex := strings.Index(final.Content, "# 本轮用户请求（最高优先级）")
+	if stableIndex < 0 || dynamicIndex < 0 || requestIndex < 0 || stableIndex >= dynamicIndex || dynamicIndex >= requestIndex {
+		t.Fatalf("workspace contexts must follow reusable history and precede the current request:\n%s", final.Content)
 	}
 	if !strings.HasSuffix(strings.TrimSpace(final.Content), "继续写") {
 		t.Fatalf("final message should keep current request at the bottom:\n%s", final.Content)

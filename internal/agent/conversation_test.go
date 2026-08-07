@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"denova/config"
+	agentcontext "denova/internal/agent/context"
 	"denova/internal/session"
 )
 
@@ -129,7 +130,7 @@ func TestSessionConversationPrependsDynamicContextInsideFinalUserMessageOnly(t *
 	}
 }
 
-func TestSessionConversationPrependsStableContextBeforeHistory(t *testing.T) {
+func TestSessionConversationPlacesWorkspaceContextsAfterHistory(t *testing.T) {
 	store, err := session.NewStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -158,27 +159,90 @@ func TestSessionConversationPrependsStableContextBeforeHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(history) != 4 {
-		t.Fatalf("history length = %d, want 4: %#v", len(history), history)
+	if len(history) != 3 {
+		t.Fatalf("history length = %d, want 3: %#v", len(history), history)
 	}
-	if !strings.Contains(history[0].Content, "# 稳定作品上下文") || !strings.Contains(history[0].Content, "主角进入废城") {
-		t.Fatalf("first model message should be stable context: %s", history[0].Content)
+	if history[0].Content != "旧用户请求" || history[1].Content != "旧助手回复" {
+		t.Fatalf("persisted history should remain the reusable model prefix: %#v", messageContents(history))
 	}
-	if history[1].Content != "旧用户请求" || history[2].Content != "旧助手回复" {
-		t.Fatalf("stable context should precede persisted history: %#v", messageContents(history))
+	final := history[2].Content
+	stableIndex := strings.Index(final, "# 稳定作品上下文")
+	dynamicIndex := strings.Index(final, "# 本轮动态作品状态")
+	requestIndex := strings.Index(final, "# 本轮用户请求（最高优先级）")
+	if stableIndex < 0 || dynamicIndex < 0 || requestIndex < 0 || stableIndex >= dynamicIndex || dynamicIndex >= requestIndex {
+		t.Fatalf("final model message should contain stable state, dynamic state, then the request:\n%s", final)
 	}
-	if !strings.Contains(history[3].Content, "# 本轮动态作品状态") || !strings.HasSuffix(strings.TrimSpace(history[3].Content), "继续写") {
-		t.Fatalf("final model message should contain dynamic context then request: %s", history[3].Content)
+	if !strings.Contains(final, "主角进入废城") || !strings.Contains(final, "刚抵达废城") || !strings.HasSuffix(strings.TrimSpace(final), "继续写") {
+		t.Fatalf("final model message is missing workspace context or request:\n%s", final)
 	}
 	if visible := sess.History(); len(visible) != 3 || visible[2].Content != "继续写" {
 		t.Fatalf("visible session history should only include raw user request: %#v", visible)
 	}
-	if sources := conversation.ContextSourceSummary(); !strings.Contains(sources, "prepended_to_model_messages") || !strings.Contains(sources, "prepended_to_final_user_message") {
-		t.Fatalf("runtime context source summary missing stable/dynamic locations: %s", sources)
+	if sources := conversation.ContextSourceSummary(); strings.Contains(sources, "prepended_to_model_messages") || strings.Count(sources, "prepended_to_final_user_message") != 2 {
+		t.Fatalf("both workspace contexts should be placed after reusable history: %s", sources)
 	}
 }
 
-func TestSessionConversationKeepsStableContextBeforeCompactionSummary(t *testing.T) {
+func TestSessionConversationWorkspaceEditsPreserveHistoryPrefix(t *testing.T) {
+	store, err := session.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := store.GetOrCreate("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sess.Append(schema.UserMessage("上一轮讨论")); err != nil {
+		t.Fatal(err)
+	}
+	if err := sess.Append(schema.AssistantMessage("上一轮结论", nil)); err != nil {
+		t.Fatal(err)
+	}
+	if err := sess.Append(schema.UserMessage("当前请求占位")); err != nil {
+		t.Fatal(err)
+	}
+
+	build := func(stable, dynamic string) []*schema.Message {
+		conversation := NewSessionConversationForAgentWithRuntimeContexts(
+			sess,
+			&config.Config{},
+			config.AgentKindIDE,
+			"稳定作品上下文",
+			stable,
+			"本轮动态作品状态",
+			dynamic,
+		)
+		// modelMessages replaces the already-persisted current user message, so
+		// this test can compare two assemblies without appending duplicate turns.
+		result, err := agentcontext.Build(context.Background(), agentcontext.Request{
+			Messages: conversation.modelMessages("继续写"),
+			Sources:  conversation.runtimeContextSources(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result.Messages
+	}
+
+	before := build("旧大纲", "旧进度")
+	after := build("新大纲", "新进度")
+	if len(before) != 3 || len(after) != 3 {
+		t.Fatalf("unexpected model messages: before=%#v after=%#v", before, after)
+	}
+	for i := 0; i < len(before)-1; i++ {
+		if before[i].Role != after[i].Role || before[i].Content != after[i].Content {
+			t.Fatalf("workspace edits invalidated reusable history message %d: before=%#v after=%#v", i, before[i], after[i])
+		}
+	}
+	if before[len(before)-1].Content == after[len(after)-1].Content {
+		t.Fatalf("current workspace context should change only the final user message")
+	}
+	if !strings.Contains(after[len(after)-1].Content, "新大纲") || !strings.Contains(after[len(after)-1].Content, "新进度") {
+		t.Fatalf("updated workspace context missing from final message: %s", after[len(after)-1].Content)
+	}
+}
+
+func TestSessionConversationKeepsWorkspaceContextsInRetainedCurrentTurnAfterCompaction(t *testing.T) {
 	previous := summarizeContextForCompaction
 	defer func() { summarizeContextForCompaction = previous }()
 	summarizeContextForCompaction = func(_ context.Context, _ *config.Config, _ string, _ string, _ []*schema.Message, _ string, _ int, _ contextCompactionPolicy, _ func(int, string)) (string, int, error) {
@@ -222,14 +286,61 @@ func TestSessionConversationKeepsStableContextBeforeCompactionSummary(t *testing
 	if !result.Triggered {
 		t.Fatalf("expected compaction to trigger: %#v", result)
 	}
-	if len(compacted) < 3 {
+	if len(compacted) < 2 {
 		t.Fatalf("compacted messages too short: %#v", compacted)
 	}
-	if !strings.Contains(compacted[0].Content, "# 稳定作品上下文") {
-		t.Fatalf("stable context should remain first after compaction: %#v", messageContents(compacted))
+	if !isContextCompactionMessage(compacted[0]) {
+		t.Fatalf("compaction summary should replace old history: %#v", messageContents(compacted))
 	}
-	if !isContextCompactionMessage(compacted[1]) {
-		t.Fatalf("compaction summary should follow stable context: %#v", messageContents(compacted))
+	currentTurn := compacted[len(compacted)-1].Content
+	for _, want := range []string{"# 稳定作品上下文", "主角进入废城", "# 本轮动态作品状态", "刚抵达废城", "继续写"} {
+		if !strings.Contains(currentTurn, want) {
+			t.Fatalf("retained current turn missing %q after compaction: %s", want, currentTurn)
+		}
+	}
+}
+
+func TestSessionConversationCompactionSourceUsesSemanticToolProjection(t *testing.T) {
+	store, err := session.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := store.GetOrCreate("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sess.Append(schema.UserMessage("读取第一章")); err != nil {
+		t.Fatal(err)
+	}
+	readArgs := `{"file_path":"/workspace/chapters/ch00001.md","offset":1,"limit":2000}`
+	if err := sess.AppendContextMessage(schema.AssistantMessage("", []schema.ToolCall{{
+		ID: "call-read", Type: "function", Function: schema.FunctionCall{Name: "read_file", Arguments: readArgs},
+	}})); err != nil {
+		t.Fatal(err)
+	}
+	readResult := `{"schema":"workspace_file.read.v2","file_path":"/workspace/chapters/ch00001.md","offset":1,"limit":2000}` +
+		"\n     1\t" + strings.Repeat("历史章节正文", 1000)
+	if err := sess.AppendContextMessage(schema.ToolMessage(readResult, "call-read", schema.WithToolName("read_file"))); err != nil {
+		t.Fatal(err)
+	}
+	if err := sess.Append(schema.AssistantMessage("已读取并完成判断", nil)); err != nil {
+		t.Fatal(err)
+	}
+
+	conversation := NewSessionConversation(
+		sess,
+		WithSessionContextConfig(&config.Config{}, config.AgentKindIDE),
+	)
+	source, _, _, _ := conversation.compactionIncrementalSource(true)
+	if len(source) != 4 {
+		t.Fatalf("compaction source = %#v", source)
+	}
+	if !strings.Contains(source[2].Content, retainedToolReceiptSchema) ||
+		!strings.Contains(source[2].Content, `"path":"/workspace/chapters/ch00001.md"`) {
+		t.Fatalf("compaction source should contain a re-readable file receipt: %s", source[2].Content)
+	}
+	if strings.Contains(source[2].Content, "历史章节正文") {
+		t.Fatalf("compaction source must not resend historical file bodies: %s", source[2].Content)
 	}
 }
 

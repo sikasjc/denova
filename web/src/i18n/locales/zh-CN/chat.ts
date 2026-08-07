@@ -427,7 +427,7 @@ const chat = {
   'chat.quick.finalizeState': '同步作品状态',
   'chat.quick.consistencyCheck': '一致性检查',
   'chat.quick.prompt.nextGroup': '请基于当前大纲、已有章节正文、setting/progress.md、setting/character-states.md 和资料库长期设定，生成接下来一个短期情节单元的章节组细纲。只规划下一组，不要批量生成很多组；细纲要短而可维护，方便阅读、评论和后续更新，每章只写关键点，不写长篇背景解释；如实际正文已经偏离大纲，请先指出偏差并让我确认是调整大纲还是拉回主线。',
-  'chat.quick.prompt.writeNextChapter': '请读取当前章节组细纲、长期大纲、setting/progress.md、setting/character-states.md、资料库长期设定和最近至少两章实际正文，按细纲安排创作下一章。写作前以已有章节路径和非空正文判断下一章编号、标题与所属分卷，setting/progress.md 只作为摘要参考；若属于某一卷，请写入 chapters/<分卷名>/ 下符合章节文件名模板的文件。完成正文自检和本轮最后修订后，在同一轮同步更新 setting/progress.md 与 setting/character-states.md；章节是否标记成章不影响同步。',
+  'chat.quick.prompt.writeNextChapter': '请读取当前章节组细纲、长期大纲、setting/progress.md、setting/character-states.md、资料库长期设定和最近至少两章实际正文，按细纲安排创作下一章。写作前以已有章节路径和非空正文判断下一章编号、标题与所属分卷，setting/progress.md 只作为摘要参考；若属于某一卷，请写入 chapters/<分卷名>/ 下符合章节文件名模板的文件。严格按当前 Writing Skill 完成审稿、修订和最终机械验证，不要额外增加父 Agent 自审；形成最终稿后，在同一轮同步更新 setting/progress.md 与 setting/character-states.md，章节是否标记成章不影响同步。',
   'chat.quick.prompt.continueParagraph': '请基于{target}的上下文，续写下一段正文，保持原有叙事节奏和人物状态。',
   'chat.quick.prompt.polishChapter': '请检查并润色{target}，重点优化语句节奏、动作描写和情绪推进，不改变核心剧情。',
   'chat.quick.prompt.finalizeState': '请检查{target}与前后文和当前章节组细纲的连续性，并根据当前实际正文重新同步 setting/progress.md 和 setting/character-states.md；只有角色身份、人设、长期关系、能力体系或世界规则等稳定设定发生明确变化时，才更新资料库。章节状态只作为 UI 编辑标记，除非我明确要求，否则不要修改长期大纲。',

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { VirtuosoMockContext } from 'react-virtuoso'
@@ -329,24 +329,25 @@ describe('AgentPanel', () => {
     })
 
     await user.click(screen.getByRole('button', { name: '输入动作' }))
-    await user.hover(screen.getByText('叙事'))
+    fireEvent.pointerMove(screen.getByText('叙事'), { pointerType: 'mouse' })
     const slowBurnItem = await screen.findByText('慢热叙事')
+    vi.useFakeTimers()
     fireEvent.click(slowBurnItem.closest('[role="menuitem"]') || slowBurnItem)
-
-    await waitFor(() => {
-      expect(updateUserSettings).toHaveBeenCalledWith(expect.objectContaining({ ide_story_teller_id: 'slow-burn' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
     })
+    expect(updateUserSettings).toHaveBeenCalledWith(expect.objectContaining({ ide_story_teller_id: 'slow-burn' }))
 
-    window.dispatchEvent(new CustomEvent('nova:writing-agent-init', {
-      detail: { autoSend: true, prompt: '继续写下一段' },
-    }))
-
-    await waitFor(() => {
-      expect(handleSend).toHaveBeenCalledWith(
-        '继续写下一段',
-        expect.objectContaining({ tellerId: 'slow-burn', writingSkill: 'novel-lite' }),
-      )
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('nova:writing-agent-init', {
+        detail: { autoSend: true, prompt: '继续写下一段' },
+      }))
+      await Promise.resolve()
     })
+    expect(handleSend).toHaveBeenCalledWith(
+      '继续写下一段',
+      expect.objectContaining({ tellerId: 'slow-burn', writingSkill: 'novel-lite' }),
+    )
   })
 
   it('关闭面板后由稳定 owner 完成仍在 afterDelay 中的偏好保存', async () => {
@@ -370,7 +371,7 @@ describe('AgentPanel', () => {
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: '输入动作' }))
-    await user.hover(screen.getByText('叙事'))
+    fireEvent.pointerMove(screen.getByText('叙事'), { pointerType: 'mouse' })
     const slowBurnItem = await screen.findByText('慢热叙事')
     vi.useFakeTimers()
     fireEvent.click(slowBurnItem.closest('[role="menuitem"]') || slowBurnItem)

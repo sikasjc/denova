@@ -22,16 +22,21 @@ func TestDefaultAutoSettingsEnablesAutomaticVersionsEveryTenMinutes(t *testing.T
 func TestScheduleAutoVersionDebouncesWorkspaceChanges(t *testing.T) {
 	dir := t.TempDir()
 	service := NewService(dir)
-	service.autoVersionIdleDelay = 30 * time.Millisecond
+	service.autoVersionIdleDelay = time.Hour
 	t.Cleanup(service.Close)
 	settings := DefaultAutoSettings()
 
 	writeFile(t, dir, "chapters/ch0001.md", "第一段")
 	service.ScheduleAutoVersion(settings)
-	time.Sleep(20 * time.Millisecond)
+	firstGeneration := service.autoGeneration
 	writeFile(t, dir, "chapters/ch0001.md", "第一段，继续写作")
 	service.ScheduleAutoVersion(settings)
-	time.Sleep(20 * time.Millisecond)
+	secondGeneration := service.autoGeneration
+	if secondGeneration == firstGeneration {
+		t.Fatalf("rescheduling should advance generation: first=%d second=%d", firstGeneration, secondGeneration)
+	}
+
+	service.runScheduledAutoVersion(firstGeneration)
 
 	history, err := service.History(10)
 	if err != nil {
@@ -41,13 +46,13 @@ func TestScheduleAutoVersionDebouncesWorkspaceChanges(t *testing.T) {
 		t.Fatalf("automatic version should wait for the latest idle period: %#v", history)
 	}
 
-	deadline := time.Now().Add(300 * time.Millisecond)
-	for len(history) == 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-		history, err = service.History(10)
-		if err != nil {
-			t.Fatalf("History after idle failed: %v", err)
-		}
+	service.autoMu.Lock()
+	service.stopAutoTimerLocked()
+	service.autoMu.Unlock()
+	service.runScheduledAutoVersion(secondGeneration)
+	history, err = service.History(10)
+	if err != nil {
+		t.Fatalf("History after latest generation failed: %v", err)
 	}
 	if len(history) != 1 || history[0].Source != VersionSourceTimer {
 		t.Fatalf("expected one automatic version after idle, got %#v", history)
@@ -57,15 +62,16 @@ func TestScheduleAutoVersionDebouncesWorkspaceChanges(t *testing.T) {
 func TestScheduleAutoVersionCanBeDisabled(t *testing.T) {
 	dir := t.TempDir()
 	service := NewService(dir)
-	service.autoVersionIdleDelay = 30 * time.Millisecond
+	service.autoVersionIdleDelay = time.Hour
 	t.Cleanup(service.Close)
 	settings := DefaultAutoSettings()
 
 	writeFile(t, dir, "chapters/ch0001.md", "不会自动创建版本")
 	service.ScheduleAutoVersion(settings)
+	scheduledGeneration := service.autoGeneration
 	settings.TimedEnabled = false
 	service.ConfigureAutoVersion(settings)
-	time.Sleep(60 * time.Millisecond)
+	service.runScheduledAutoVersion(scheduledGeneration)
 
 	history, err := service.History(10)
 	if err != nil {

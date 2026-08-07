@@ -218,11 +218,7 @@ func (c *SessionConversation) CompactContextIfNeeded(ctx context.Context, input 
 		return input.Messages, result, err
 	}
 	epoch := c.nextCompactionEpoch()
-	leading, compactableMessages := c.splitLeadingRuntimeMessages(input.Messages)
-	newMessages := compactMessagesForModel(compactableMessages, summary, epoch, policy.RetainedTurns)
-	if len(leading) > 0 {
-		newMessages = append(append([]*schema.Message(nil), leading...), newMessages...)
-	}
+	newMessages := compactMessagesForModel(input.Messages, summary, epoch, policy.RetainedTurns)
 	result.Triggered = true
 	result.Epoch = epoch
 	result.Summary = summary
@@ -239,10 +235,7 @@ func (c *SessionConversation) CompactContextIfNeeded(ctx context.Context, input 
 	}
 	if record.Epoch != epoch {
 		result.Epoch = record.Epoch
-		newMessages = compactMessagesForModel(compactableMessages, summary, record.Epoch, policy.RetainedTurns)
-		if len(leading) > 0 {
-			newMessages = append(append([]*schema.Message(nil), leading...), newMessages...)
-		}
+		newMessages = compactMessagesForModel(input.Messages, summary, record.Epoch, policy.RetainedTurns)
 		result.TokensAfter = EstimateContextTokens(newMessages, input.Tools)
 		result.ProjectedTokensAfter = projectedContextTokens(result.TokensAfter, input)
 		result.MessageCountAfter = len(newMessages)
@@ -273,21 +266,6 @@ func (c *SessionConversation) modelMessages(agentMessage string) []*schema.Messa
 	return history
 }
 
-func standaloneRuntimeContextMessage(title, content, note string) string {
-	return agentcontext.StandaloneMessage(title, content, note)
-}
-
-func (c *SessionConversation) leadingRuntimeMessages() []*schema.Message {
-	if c == nil || strings.TrimSpace(c.stableContext) == "" {
-		return nil
-	}
-	content := standaloneRuntimeContextMessage(c.stableContextTitle, c.stableContext, "")
-	if strings.TrimSpace(content) == "" {
-		return nil
-	}
-	return []*schema.Message{schema.UserMessage(content)}
-}
-
 func (c *SessionConversation) runtimeContextSources() []agentcontext.Source {
 	if c == nil {
 		return nil
@@ -302,9 +280,9 @@ func (c *SessionConversation) runtimeContextSources() []agentcontext.Source {
 			Source:    "稳定上下文",
 			Title:     title,
 			Content:   c.stableContext,
-			Placement: agentcontext.PlacementLeadingMessage,
+			Placement: agentcontext.PlacementFinalUserPrefix,
 			Included:  true,
-			Note:      "prepended_to_model_messages",
+			Note:      "prepended_to_final_user_message",
 		})
 	}
 	if strings.TrimSpace(c.dynamicContext) != "" {
@@ -322,19 +300,6 @@ func (c *SessionConversation) runtimeContextSources() []agentcontext.Source {
 		})
 	}
 	return sources
-}
-
-func (c *SessionConversation) splitLeadingRuntimeMessages(messages []*schema.Message) ([]*schema.Message, []*schema.Message) {
-	leading := c.leadingRuntimeMessages()
-	if len(leading) == 0 || len(messages) < len(leading) {
-		return nil, messages
-	}
-	for i := range leading {
-		if messages[i] == nil || leading[i] == nil || messages[i].Role != leading[i].Role || messages[i].Content != leading[i].Content {
-			return nil, messages
-		}
-	}
-	return messages[:len(leading)], messages[len(leading):]
 }
 
 func (c *SessionConversation) compactionPolicy() contextCompactionPolicy {

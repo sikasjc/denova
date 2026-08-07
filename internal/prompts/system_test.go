@@ -33,9 +33,20 @@ func TestSystemInstructionRequiresIdeasAndCreatorDuringIdeation(t *testing.T) {
 		"只有用户明确要求“整章重写 / 全文重写 / 换视角重写 / 彻底改写”",
 		"old_string 应从读取结果中逐字复制",
 		"不得因为精确匹配失败就改用 write_file 覆盖已有章节",
+		"严格按当前生效 Writing Skill 规定的审稿、修订和最终机械验证顺序形成最终稿",
+		"本规则不新增 Skill 之外的独立自审或修订阶段",
+		"不要在 Skill 的 reviewer、fixer 或 final-gate 之前额外插入父 Agent 自审",
 	} {
 		if !strings.Contains(instruction, required) {
 			t.Fatalf("系统提示缺少 %q:\n%s", required, instruction)
+		}
+	}
+	for _, forbidden := range []string{
+		"完成正文自检和本轮最后修订",
+		"使用 grep 工具去检索并确认",
+	} {
+		if strings.Contains(instruction, forbidden) {
+			t.Fatalf("系统提示不应以通用自审规则覆盖 Writing Skill 阶段 %q:\n%s", forbidden, instruction)
 		}
 	}
 	if strings.Contains(instruction, "# 当前作品状态") {
@@ -76,5 +87,20 @@ func TestIDEWritingFlowKeepsChapterStatusIndependentFromStateSync(t *testing.T) 
 	}
 	if strings.Contains(instruction, "%!(EXTRA") {
 		t.Fatalf("写作流程提示存在多余 fmt 参数:\n%s", instruction)
+	}
+}
+
+func TestCreatorTemplateDefersHardRuleGrepToFinalMechanicalVerification(t *testing.T) {
+	for _, required := range []string{
+		"按当前 Writing Skill 的阶段顺序",
+		"在最终机械验证阶段使用 grep 检索确认",
+		"不要因此在 reviewer、fixer 或 final-gate 前额外增加父 Agent 自审",
+	} {
+		if !strings.Contains(CreatorTemplate, required) {
+			t.Fatalf("CreatorTemplate 缺少审稿阶段边界 %q:\n%s", required, CreatorTemplate)
+		}
+	}
+	if strings.Contains(CreatorTemplate, "使用 grep 工具去检索并确认") {
+		t.Fatalf("CreatorTemplate 不应再要求通用的预审 grep:\n%s", CreatorTemplate)
 	}
 }

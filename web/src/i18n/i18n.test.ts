@@ -33,6 +33,13 @@ describe('i18n', () => {
     }
   })
 
+  it('keeps next-chapter prompts aligned with Writing Skill review stages', () => {
+    expect(zhCN['chat.quick.prompt.writeNextChapter']).toContain('严格按当前 Writing Skill 完成审稿、修订和最终机械验证')
+    expect(zhCN['chat.quick.prompt.writeNextChapter']).toContain('不要额外增加父 Agent 自审')
+    expect(enUS['chat.quick.prompt.writeNextChapter']).toContain('Follow the active Writing Skill through review, revision, and final mechanical verification')
+    expect(enUS['chat.quick.prompt.writeNextChapter']).toContain('without adding a parent-Agent self-review stage')
+  })
+
   it('boots from the locally cached configured locale before browser language', async () => {
     vi.resetModules()
     setBrowserLanguage('en-US')

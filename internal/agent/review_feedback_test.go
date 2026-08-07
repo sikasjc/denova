@@ -92,3 +92,30 @@ func TestReviewFeedbackContextEnforcesWholeBlockByteLimit(t *testing.T) {
 		t.Fatalf("review feedback block bytes=%d", len(block))
 	}
 }
+
+func TestReviewFeedbackContextDefinesRiskRoutedDeltaReview(t *testing.T) {
+	feedback := ReviewFeedbackContexts{{
+		ReviewThreadID: "thread-1",
+		Comments: []ReviewFeedbackComment{{
+			ID:   "comment-1",
+			Body: "删掉重复的比喻",
+		}},
+	}}
+	block, err := reviewFeedbackContextBlock(feedback)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"low-risk local feedback",
+		"patch directly without calling reviewer",
+		"high-risk feedback",
+		"patch first, then request one bounded delta review",
+		"modified span plus minimal adjacent context",
+		"PASS or BLOCKER",
+		"must not expand into a whole-chapter review",
+	} {
+		if !strings.Contains(block, required) {
+			t.Fatalf("review feedback context missing risk-routed delta-review rule %q:\n%s", required, block)
+		}
+	}
+}

@@ -113,8 +113,9 @@ func (s *State) IdeasPath() string {
 	return filepath.Join(s.workspace, IdeasFileName)
 }
 
-// StableContextParts returns low-churn workspace state that should stay high
-// in model-visible context for prompt-cache reuse.
+// StableContextParts returns baseline workspace state ordered before the more
+// volatile turn state near the current request. Keeping both after persisted
+// history prevents workspace edits from invalidating the reusable history prefix.
 func (s *State) StableContextParts() []CompactContextPart {
 	parts := make([]CompactContextPart, 0, 3)
 	loreContext := s.LoreContext()

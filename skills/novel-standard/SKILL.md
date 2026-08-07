@@ -1,6 +1,6 @@
 ---
 name: novel-standard
-description: 默认写作流程，由主 Agent 写作和修订，审稿子 Agent 严格审稿，在质量和速度之间取得平衡。
+description: 默认写作流程，由主 Agent 写作和修订，并按任务风险选择完整审稿、有界差异审查或不调用 reviewer。
 agent: ide
 ---
 
@@ -11,37 +11,40 @@ agent: ide
 ## 适用范围
 
 - 正式生成一个章节或完整场景。
-- 一个章节内的多条混合审阅意见。
-- 需要一次独立审稿，但不需要跨章多 Agent 深度流水线。
+- 常规章节修订或结构化审阅反馈。
+- 需要按风险决定 full review、delta review 或不调用 reviewer。
 
 ## 执行
 
-- 默认流程：`主 Agent 初稿 -> reviewer 审稿 -> 主 Agent Patch 修订 -> 状态同步 -> 最终输出`。
-- 默认只使用主 Agent 和 `reviewer`；不要启动 writer、fixer 或其他写作 subagent。只有下述“按需编排”条件成立时，才允许在初稿前额外调用一次 `choreographer` 或 `intimacy-choreographer`。
-- 从用户实际指令判断范围；没有 `writing_scope` 字段。除非用户明确说“写下一章”，否则不要假设任务一定是下一章。
-- 当用户要求一次写 N 章时，先制定简洁的整体计划和分章计划。
+- 新章节、完整场景或非结构化实质修订：`主 Agent 初稿/定位正文 -> reviewer full review -> 主 Agent 一次 Patch -> 最终机械验证 -> 状态同步 -> 最终输出`。
+- 结构化审阅反馈走下方独立分流，不因启用本 Skill 自动追加 full review。
+- 默认只使用主 Agent 和按规则触发的 `reviewer`；不要启动 writer、fixer 或其他写作 SubAgent。
+- 从用户实际指令判断范围；没有 `writing_scope` 字段，不要假设任务一定是下一章。一次写 N 章时先给出简洁的整体计划和分章计划。
 - 只读取必要上下文；新章节用 `write_file`，已有章节按 system prompt 用一次批量 `edit_file` 最小必要 Patch。
-- 用户提交的结构化审阅意见是 reviewer 的重点输入，不等同于已经完成的独立审稿。先通过 `task` 委派 `reviewer`，让其结合最新正文核对每条意见的有效性、证据位置、重叠或冲突、最小影响范围、必须保留内容和相关连续性风险，再由主 Agent 聚合 reviewer 与用户意见并修订；默认只调用这一次 reviewer，不在修订后机械追加第二轮复审。
-- 所有正式写作任务都必须通过 `task` 委派一次 `reviewer`；description 写清用户目标、章节路径、上下文来源、审稿重点、用户结构化审阅意见和结构化输出，reviewer 只审稿不写文件。若 reviewer 不可用或调用失败，明确报告阻断原因，不得静默跳过后宣称已完成标准流程。
-- 主 Agent 聚合 reviewer/用户意见后再修订，不能机械逐条修改破坏整体，也不能因评论多而扩大范围。
-- 工具返回 `[tool error]`、`string not found`、参数或路径错误时不得宣称已完成；重新读取并重试。
-- 完成后读回关键片段；只有叙事事实或角色状态变化时才同步状态文件。
+- 对新章节、完整场景或非结构化实质修订，初稿写入或待修订正文定位后，立即通过 `task` 委派 `reviewer`，并在 description 标记 `review_mode=full_review`。在其返回前，主 Agent 不得完整读回初稿、自行审稿、grep、列问题或修订；仅可恢复失败工具。
+- 主 Agent 聚合 reviewer/用户意见后只做一次统一的最小必要 Patch，不能机械逐条修改或因评论多而扩大范围。
+- Patch 后只做最终机械验证；不得重开全文审稿、问题清单或开放式修订循环。`[tool error]`、匹配或路径错误必须恢复，否则不得宣称已完成。
+- 只有最终稿改变叙事事实或角色状态时才同步状态文件。
+
+## 结构化审阅反馈分流
+
+- 先按影响范围分流；评论数量本身不构成高风险。
+- **低风险局部反馈**：单文件内明确的错字、标点、称谓、重复、局部措辞或删除，不改变剧情事实、动机、时间线、伏笔、世界规则、角色状态或授权范围。直接最小 Patch，不调用 reviewer；只读回受影响片段并机械验证。
+- **高风险反馈**：意见冲突/含糊、跨文件/章节、需要扩大范围，或涉及上述叙事事实与结构。先完成最小 Patch，再调用一次 `reviewer` 做 delta review。
+- delta review 的 description 标记 `review_mode=delta_review`，只传用户意见、路径、修改前片段、修改后片段和最小必要邻接上下文。reviewer 只审本次修改是否满足反馈、误伤范围和局部连续性，只返回 PASS 或 BLOCKER；不得扩展为全章审稿、无关旧问题或范围外优化。
+- PASS 后机械验证；BLOCKER 只允许一次最小修正，不追加第二次 reviewer。需要扩大授权范围时先询问用户。
 
 ## 按需编排
 
-仅当物理或情绪连续性复杂到会实质影响正文质量时，在初稿前调用一次对应专业 SubAgent：
-
-- 复杂战斗、追逐、多人协作、救援/攀爬、军阵、载具或灾害，需要跟踪多主体位置、资源与反应因果时，调用 `task(subagent_type=choreographer)`。
-- 复杂亲密/情色互动，需要跟踪多人或长段肢体位置、姿态、情绪回应、意愿信号与张力时，调用 `task(subagent_type=intimacy-choreographer)`。
-- description 传递用户目标、必要路径、人物/空间约束、只返回 beat sheet、禁止写入；亲密场景原样传递用户尺度，不自行升级或净化。
-- beat sheet 只作内部写作计划；除非用户要求，不在最终回复中展示。
-- 同一场景最多调用一个 choreography SubAgent 一次；若动作与亲密维度同时存在，选择对连续性风险更关键的一个，不串行调用两套编排。
-
-普通对白、静态描写、简单走位、单次拥抱/亲吻/触碰、少量明确动作或纯措辞润色不要调用 choreography。
+- 复杂战斗、追逐、多人协作或灾害才调用 `task(subagent_type=choreographer)`；复杂亲密互动才调用 `task(subagent_type=intimacy-choreographer)`。
+- description 传目标、路径、人物/空间约束，只返回 beat sheet、禁止写入；用户尺度原样传递，不自行升级或净化。
+- 同一场景最多调用一个 choreography SubAgent 一次。普通对白、静态描写、简单走位或纯措辞润色不调用。
 
 ## 审稿要求
 
-`reviewer` 审稿时可读取必要前文、CREATOR.md、大纲、进度、角色状态和资料库作为对照依据。重点检查新增章节是否符合任务要求、用户提示词、CREATOR.md、长期大纲、角色设定与当前状态、世界观和已有连续性；评估剧情推进、人物行为动机、设定一致性、节奏、语言质量和可读性。按严重程度输出问题、证据位置、影响和可执行改进建议；如果执行模式不允许写入，只输出审稿结论和修订方案。
+- `full_review`：读取必要对照，检查任务、连续性、设定、动机、节奏和语言，按严重程度返回证据与修复建议。
+- `delta_review`：严格遵守结构化反馈分流中的有界输入与 `PASS/BLOCKER` 协议。
+- reviewer 始终只审不写；若调用失败，报告阻断原因，不得假装已完成要求 reviewer 的流程。
 
 ## 最终输出
 

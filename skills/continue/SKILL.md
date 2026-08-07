@@ -17,7 +17,7 @@ agent: ide,interactive_story
 5. 根据大纲方向、章节组细纲、角色当前状态、资料库长期设定和前文正文创作本章内容；如本轮涉及资料库索引中的相关自动加载条目（基于简介判断），先用 read_lore_items 读取完整资料
 6. 使用 write_file 将章节写入 `chapters/` 下符合系统提示章节文件名模板的位置；章节状态只用于 UI 编辑标记，不影响后续章节判断或状态同步
 7. 不更改 `setting/outline.md`
-8. 完成正文自检和本轮最后修订后，在同一轮更新 `setting/progress.md`（当前进度 + 本章摘要）和 `setting/character-states.md`（角色当前状态），不等待作者另行确认成章；只有长期设定发生明确变化时，才使用 write_lore_items 批量同步资料库条目
+8. 若本轮同时生效 `novel-lite` / `novel-standard` / `novel-heavy`，严格按该 preset 的审稿、修订和最终机械验证顺序执行；standalone 使用本 Skill 时只做一次轻量自检和最多一次最小修正，不启动额外审稿流水线。形成最终稿后，在同一轮更新 `setting/progress.md`（当前进度 + 本章摘要）和 `setting/character-states.md`（角色当前状态），不等待作者另行确认成章。只有长期设定发生明确变化时，才使用 write_lore_items 批量同步资料库条目
 
 ## 写作要求
 

@@ -25,6 +25,31 @@ func TestBuiltinTaskTemplatesProvideLocalizedWorkspaceDrafts(t *testing.T) {
 	if !strings.Contains(continueWriting.Defaults.Prompt, "续写下一章") {
 		t.Fatalf("Chinese prompt not localized: %q", continueWriting.Defaults.Prompt)
 	}
+	for _, required := range []string{
+		"若本轮生效 Writing preset，严格按其审稿、修订与最终机械验证顺序执行",
+		"否则只做一次轻量自检和最多一次最小修正",
+		"不额外增加审稿流水线",
+		"形成最终稿后",
+	} {
+		if !strings.Contains(continueWriting.Defaults.Prompt, required) {
+			t.Fatalf("Chinese continue-writing prompt missing workflow boundary %q: %q", required, continueWriting.Defaults.Prompt)
+		}
+	}
+
+	continueWritingEnglish := templateByID(en, TemplateContinueWriting)
+	if continueWritingEnglish == nil {
+		t.Fatal("English continue-writing template missing")
+	}
+	for _, required := range []string{
+		"When a Writing preset is active, follow its review, revision, and final mechanical-verification sequence",
+		"Otherwise perform one lightweight check and at most one minimal correction",
+		"without adding a review pipeline",
+		"Once the final draft is established",
+	} {
+		if !strings.Contains(continueWritingEnglish.Defaults.Prompt, required) {
+			t.Fatalf("English continue-writing prompt missing workflow boundary %q: %q", required, continueWritingEnglish.Defaults.Prompt)
+		}
+	}
 
 	review := templateByID(en, TemplateReview)
 	if review == nil {

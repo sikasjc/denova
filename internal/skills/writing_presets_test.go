@@ -108,20 +108,71 @@ func TestBuiltinWritingPresetInstructionsCoverTaskDelegation(t *testing.T) {
 	}
 }
 
-func TestNovelStandardAlwaysDelegatesStructuredReviewFeedbackToReviewer(t *testing.T) {
+func TestNovelStandardRoutesStructuredReviewFeedbackByRisk(t *testing.T) {
 	standard := readBuiltinWritingPreset(t, "novel-standard")
 	for _, required := range []string{
-		"结构化审阅意见是 reviewer 的重点输入",
-		"不等同于已经完成的独立审稿",
-		"所有正式写作任务都必须通过 `task` 委派一次 `reviewer`",
-		"不得静默跳过",
+		"低风险局部反馈",
+		"直接最小 Patch，不调用 reviewer",
+		"高风险反馈",
+		"先完成最小 Patch，再调用一次 `reviewer` 做 delta review",
+		"只审本次修改",
+		"PASS 或 BLOCKER",
+		"不得扩展为全章审稿",
+		"评论数量本身不构成高风险",
 	} {
 		if !strings.Contains(standard, required) {
-			t.Fatalf("novel-standard missing required reviewer policy %q", required)
+			t.Fatalf("novel-standard missing structured-feedback routing policy %q", required)
 		}
 	}
-	if strings.Contains(standard, "默认视为本轮 review 结果") {
-		t.Fatalf("novel-standard must not treat structured review feedback as a replacement for reviewer")
+	for _, forbidden := range []string{
+		"结构化审阅意见是 reviewer 的重点输入，不等同于已经完成的独立审稿",
+		"所有正式写作任务都必须通过 `task` 委派一次 `reviewer`",
+	} {
+		if strings.Contains(standard, forbidden) {
+			t.Fatalf("novel-standard still forces a full reviewer for structured feedback: %q", forbidden)
+		}
+	}
+}
+
+func TestBuiltinWritingPresetsKeepReviewStageBoundaries(t *testing.T) {
+	lite := readBuiltinWritingPreset(t, "novel-lite")
+	for _, required := range []string{
+		"只允许一次轻量内部自检",
+		"必要时做一次最小修正",
+		"不要反复读回/grep/修订",
+		"不要把轻量自检演化为第二轮完整审稿流程",
+	} {
+		if !strings.Contains(lite, required) {
+			t.Fatalf("novel-lite missing bounded self-check policy %q", required)
+		}
+	}
+
+	standard := readBuiltinWritingPreset(t, "novel-standard")
+	for _, required := range []string{
+		"新章节、完整场景或非结构化实质修订",
+		"初稿写入或待修订正文定位后，立即通过 `task` 委派 `reviewer`",
+		"结构化审阅反馈走下方独立分流",
+		"主 Agent 聚合 reviewer/用户意见后只做一次统一的最小必要 Patch",
+		"Patch 后只做最终机械验证",
+		"不得重开全文审稿、问题清单或开放式修订循环",
+	} {
+		if !strings.Contains(standard, required) {
+			t.Fatalf("novel-standard missing review-stage boundary %q", required)
+		}
+	}
+
+	heavy := readBuiltinWritingPreset(t, "novel-heavy")
+	for _, required := range []string{
+		"专业阶段必须直接衔接",
+		"writer 返回后，主 Agent 不得完整读回、自审、grep、另列问题或改写",
+		"fixer 返回后直接委派 final-gate",
+		"不得在 reviewer、fixer、final-gate 间插入自审、全文读回、grep 或修订",
+		"只有 final-gate 报告 blocker 时，才交回 fixer 一次并再次执行 final-gate",
+		"final-gate 通过后，只可读回最终关键片段确认落盘并进入 memory-patcher",
+	} {
+		if !strings.Contains(heavy, required) {
+			t.Fatalf("novel-heavy missing professional-stage boundary %q", required)
+		}
 	}
 }
 

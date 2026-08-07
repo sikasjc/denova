@@ -13,6 +13,7 @@ vi.mock('@/lib/api-client/autosave-conflicts', () => ({
 
 interface HarnessControls {
   rename: (name: string) => void
+  replaceBaseline: (preset: ImagePreset) => void
 }
 
 let controls: HarnessControls | null = null
@@ -67,6 +68,58 @@ describe('usePresetDraftSync', () => {
       expect.objectContaining({ name: 'newer local edit', updated_at: 'r2' }),
       'r2',
     )
+  })
+
+  it('adopts an external baseline without writing when the draft is clean', async () => {
+    const save = vi.fn()
+    render(<PresetDraftSyncHarness save={save} />)
+    await screen.findByText('original')
+
+    act(() => controls?.replaceBaseline(imagePreset('external', 'r2')))
+
+    expect(await screen.findByText('external')).toBeInTheDocument()
+    expect(screen.getByTestId('revision')).toHaveTextContent('r2')
+    expect(save).not.toHaveBeenCalled()
+    expect(preserveAutosaveConflict).not.toHaveBeenCalled()
+  })
+
+  it('rebases a dirty draft over non-overlapping external fields', async () => {
+    const save = vi.fn()
+    render(<PresetDraftSyncHarness save={save} />)
+    await screen.findByText('original')
+
+    act(() => controls?.rename('local name'))
+    act(() => controls?.replaceBaseline({
+      ...imagePreset('original', 'r2'),
+      description: 'external description',
+    }))
+
+    expect(await screen.findByText('local name')).toBeInTheDocument()
+    expect(screen.getByTestId('description')).toHaveTextContent('external description')
+    expect(screen.getByTestId('revision')).toHaveTextContent('r2')
+    expect(preserveAutosaveConflict).not.toHaveBeenCalled()
+  })
+
+  it('keeps edits made while an overlapping external update is being archived', async () => {
+    const archive = deferred<Awaited<ReturnType<typeof preserveAutosaveConflict>>>()
+    vi.mocked(preserveAutosaveConflict).mockReturnValueOnce(archive.promise)
+    const save = vi.fn()
+    render(<PresetDraftSyncHarness save={save} />)
+    await screen.findByText('original')
+
+    act(() => controls?.rename('local before archive'))
+    act(() => controls?.replaceBaseline(imagePreset('external name', 'r2')))
+    await vi.waitFor(() => expect(preserveAutosaveConflict).toHaveBeenCalledOnce())
+
+    act(() => controls?.rename('latest local name'))
+    archive.resolve({
+      id: 'conflict-1',
+      path: 'conflicts/conflict-1.json',
+      storage: 'server',
+    })
+
+    expect(await screen.findByText('latest local name')).toBeInTheDocument()
+    expect(screen.getByTestId('revision')).toHaveTextContent('r2')
   })
 })
 
@@ -130,8 +183,15 @@ function PresetDraftSyncHarness({
 
   controls = {
     rename: (name) => setImageDraft((current) => current ? { ...current, name } : current),
+    replaceBaseline: (preset) => setImagePresets([preset]),
   }
-  return <output data-testid="draft">{imageDraft ? `${imageDraft.name}:${imageDraft.updated_at}` : 'empty'}</output>
+  return imageDraft ? (
+    <output data-testid="draft">
+      <span>{imageDraft.name}</span>
+      <span data-testid="description">{imageDraft.description}</span>
+      :<span data-testid="revision">{imageDraft.updated_at}</span>
+    </output>
+  ) : <output data-testid="draft">empty</output>
 }
 
 function imagePreset(name: string, revision: string): ImagePreset {

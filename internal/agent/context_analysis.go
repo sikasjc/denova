@@ -205,26 +205,19 @@ func BuildIDEContextAnalysis(cfg *config.Config, state *book.State, teller IDESt
 	}
 	messages = contextResult.Messages
 	contextMessages := make([]ContextAnalysisPart, 0, len(messages))
-	stableMessageCount := 0
-	if strings.TrimSpace(runtimeContexts.Stable) != "" {
-		stableMessageCount = 1
-	}
 	for i, msg := range messages {
 		if msg == nil {
 			continue
 		}
 		source := "会话历史"
 		title := fmt.Sprintf("历史消息 %d", i+1)
-		if i < stableMessageCount {
-			source = "稳定作品上下文"
-			title = runtimeContexts.StableTitle
-		} else if isContextCompactionMessage(msg) {
+		if isContextCompactionMessage(msg) {
 			source = "上下文压缩"
 			title = "模型可见历史检查点"
 		} else if i == len(messages)-1 {
 			source = "本轮上下文"
-			if strings.TrimSpace(runtimeContexts.Dynamic) != "" {
-				title = "动态作品状态与本轮用户请求"
+			if strings.TrimSpace(runtimeContexts.Stable) != "" || strings.TrimSpace(runtimeContexts.Dynamic) != "" {
+				title = "作品上下文与本轮用户请求"
 			} else {
 				title = "本轮发送给 Agent 的用户消息"
 			}
@@ -260,9 +253,9 @@ func ideRuntimeContextSources(contexts IDEWorkspaceRuntimeContexts) []agentconte
 			Source:    "稳定作品上下文",
 			Title:     contexts.StableTitle,
 			Content:   contexts.Stable,
-			Placement: agentcontext.PlacementLeadingMessage,
+			Placement: agentcontext.PlacementFinalUserPrefix,
 			Included:  true,
-			Note:      "prepended_to_model_messages",
+			Note:      "prepended_to_final_user_message",
 		})
 	}
 	if strings.TrimSpace(contexts.Dynamic) != "" {

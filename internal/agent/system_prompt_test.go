@@ -43,6 +43,28 @@ func TestProtectedSystemInstructionOmitsEmptyCustomPrompt(t *testing.T) {
 	}
 }
 
+func TestAutomationInstructionDefersReviewSequenceToWritingSkill(t *testing.T) {
+	instruction := editableAutomationBuiltinInstruction(&config.Config{Workspace: "/tmp/book"}, nil, AutomationTaskInstruction{
+		Name:       "Continue",
+		Prompt:     "续写下一章",
+		WriteMode:  "auto_write",
+		WriteScope: "file",
+	})
+	for _, required := range []string{
+		"本轮有生效 Writing preset 时严格按其审稿、修订与最终机械验证顺序执行",
+		"否则只做一次轻量自检和最多一次最小修正",
+		"不额外增加审稿流水线",
+		"形成最终稿后在同一轮同步进度和角色状态",
+	} {
+		if !strings.Contains(instruction, required) {
+			t.Fatalf("automation instruction missing writing workflow boundary %q:\n%s", required, instruction)
+		}
+	}
+	if strings.Contains(instruction, "完成正文自检与最后修订") {
+		t.Fatalf("automation instruction must not reintroduce a generic pre-review self-check:\n%s", instruction)
+	}
+}
+
 func TestProtectedSystemInstructionGuidesThinkingLanguageFromConfig(t *testing.T) {
 	zhInstruction := protectedSystemInstruction(&config.Config{Language: "zh-CN"}, config.AgentKindIDE, "BUILT IN PROMPT")
 	for _, required := range []string{"## 思考语言", "流式 thinking 内容都使用简体中文", "不要因此改变输出协议"} {
