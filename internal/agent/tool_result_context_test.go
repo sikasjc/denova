@@ -140,7 +140,7 @@ func TestToolResultContextRecorderPersistsAlreadyBoundedResultExactly(t *testing
 	}
 }
 
-func TestToolResultContextRecorderPersistsFileReadReceipt(t *testing.T) {
+func TestToolResultContextRecorderStoresFileBodyAndCollapsesAtAssembly(t *testing.T) {
 	conversation := &recordedToolContextConversation{policy: ToolResultContextPolicy{
 		AgentKind:      config.AgentKindIDE,
 		Enabled:        true,
@@ -151,7 +151,7 @@ func TestToolResultContextRecorderPersistsFileReadReceipt(t *testing.T) {
 	recorder.RecordAssistantToolCalls(schema.AssistantMessage("", []schema.ToolCall{{
 		ID: "call-read", Type: "function", Function: schema.FunctionCall{Name: "read_file", Arguments: arguments},
 	}}), agentEventMetadata{})
-	raw := `{"schema":"workspace_file.read.v2","file_path":"/workspace/chapters/ch00001.md","offset":21,"limit":40}` +
+	raw := `{"schema":"workspace_file.read.v2","file_path":"/workspace/chapters/ch00001.md","offset":21,"limit":40,"revision":"sha256:abc"}` +
 		"\n    21\t第一段正文\n    22\t第二段正文"
 	bounded := FilterToolResultForModelWithLimit("read_file", arguments, raw, 128*1024)
 	recorder.RecordToolResult("read_file", "call-read", bounded.Content, agentEventMetadata{})
@@ -159,7 +159,23 @@ func TestToolResultContextRecorderPersistsFileReadReceipt(t *testing.T) {
 	if len(conversation.messages) != 2 {
 		t.Fatalf("recorded messages = %#v", conversation.messages)
 	}
-	receipt := conversation.messages[1].Content
+	// Record time keeps the full body so a later assembly can retain it verbatim
+	// when the file is unchanged; conversion to a receipt is deferred.
+	stored := conversation.messages[1].Content
+	if !strings.Contains(stored, "第一段正文") || !strings.Contains(stored, "第二段正文") {
+		t.Fatalf("record time must keep the full read_file body: %s", stored)
+	}
+	if strings.Contains(stored, retainedToolReceiptSchema) {
+		t.Fatalf("record time must not collapse read_file to a receipt: %s", stored)
+	}
+
+	// With no revision resolver, assembly collapses the body to a receipt exactly
+	// as before, and the body must not leak into the next turn.
+	modelMessages := applyToolResultContextPolicy(conversation.messages, conversation.policy)
+	if len(modelMessages) != 2 {
+		t.Fatalf("model messages = %#v", modelMessages)
+	}
+	receipt := modelMessages[1].Content
 	for _, want := range []string{
 		retainedToolReceiptSchema,
 		`"tool_name":"read_file"`,
@@ -412,8 +428,8 @@ func TestToolResultContextReplacesSkillBodyWithSourceReceipt(t *testing.T) {
 	}
 }
 
-func TestToolResultContextReplacesFileBodiesWithSourceReceipt(t *testing.T) {
-	raw := `{"schema":"workspace_file.read.v2","file_path":"/workspace/chapters/ch00001.md","offset":21,"limit":40}` +
+func TestSemanticTransformCollapsesFileBodyToReceipt(t *testing.T) {
+	raw := `{"schema":"workspace_file.read.v2","file_path":"/workspace/chapters/ch00001.md","offset":21,"limit":40,"revision":"sha256:abc"}` +
 		"\n    21\t第一段正文\n    22\t第二段正文"
 	content := toolResultContextContent("read_file", raw, ToolResultContextPolicy{AgentKind: config.AgentKindIDE})
 	for _, want := range []string{

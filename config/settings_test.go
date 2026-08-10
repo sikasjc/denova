@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -119,8 +118,8 @@ func TestDefaultSettingsValues(t *testing.T) {
 	if s.WritingQuickActions != nil {
 		t.Fatalf("WritingQuickActions should fall back to frontend defaults until customized: %#v", s.WritingQuickActions)
 	}
-	if got := subAgentIDs(s.SubAgents); !reflect.DeepEqual(got, []string{"choreographer", "intimacy-choreographer"}) {
-		t.Fatalf("built-in choreography SubAgents missing from defaults: %#v", got)
+	if got := subAgentIDs(s.SubAgents); len(got) != 0 {
+		t.Fatalf("default settings must ship no built-in SubAgents, got %#v", got)
 	}
 	if s.GeneralSubAgents.Default == nil || *s.GeneralSubAgents.Default {
 		t.Fatalf("GeneralSubAgents default fallback should be disabled")

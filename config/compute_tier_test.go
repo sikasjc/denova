@@ -110,8 +110,8 @@ func TestResolveSubAgentModelExplicitOverrideWinsOverTier(t *testing.T) {
 
 func TestResolveSubAgentModelTierIgnoredForNonIDEParent(t *testing.T) {
 	cfg := tierTestConfig(WritingComputeTierSpeed)
-	// 游戏模式 choreographer 继承 interactive_story，写作档位不得影响它。
-	resolved := ResolveSubAgentModel(cfg, AgentKindInteractiveStory, subAgent("choreographer", ComputeRoleReasoning))
+	// 游戏模式 SubAgent 继承 interactive_story，写作档位不得影响它。
+	resolved := ResolveSubAgentModel(cfg, AgentKindInteractiveStory, subAgent("reviewer", ComputeRoleReasoning))
 	if resolved.OpenAIModel != "deepseek-v4-pro" {
 		t.Fatalf("non-IDE parent model = %q, want inherited pro (tier must not apply)", resolved.OpenAIModel)
 	}

@@ -88,32 +88,12 @@ func TestConfigTemplatePreseedsEditableWritingPipelineOnly(t *testing.T) {
 	}
 }
 
-func TestBuiltInChoreographySubAgentsAreCrossModeReadOnlyAndOverridable(t *testing.T) {
-	defaults := DefaultSettings().SubAgents
-	if got := subAgentIDs(defaults); !reflect.DeepEqual(got, []string{"choreographer", "intimacy-choreographer"}) {
-		t.Fatalf("built-in choreography subagents = %#v", got)
-	}
-	for _, sub := range defaults {
-		if !SubAgentAllowedForParent(sub, AgentKindIDE) || !SubAgentAllowedForParent(sub, AgentKindInteractiveStory) {
-			t.Fatalf("choreography subagent should be shared across writing and game: %#v", sub)
-		}
-		parent := ResolveAgentTools(&Config{}, AgentKindIDE)
-		tools := ResolveSubAgentTools(parent, sub.Tools)
-		if !tools.Skills || !tools.FileRead || tools.FileWrite || tools.LoreWrite || tools.ShellExecute || tools.WebSearch {
-			t.Fatalf("choreography subagent tools are not read-only: %#v", tools)
-		}
-	}
-
-	off := false
-	merged := MergeSubAgents(defaults, []SubAgentConfig{{
-		ID:           "choreographer",
-		Description:  "custom description",
-		SystemPrompt: "custom prompt",
-		Enabled:      &off,
-		Parents:      []string{AgentKindIDE, AgentKindInteractiveStory},
-	}})
-	if SubAgentEnabled(merged[0]) {
-		t.Fatalf("user override should disable built-in choreography subagent: %#v", merged[0])
+func TestDefaultSettingsHaveNoBuiltInSubAgents(t *testing.T) {
+	// Choreography specialists were removed; writing/game rely on the main Agent
+	// and the writing pipeline SubAgents, which users add explicitly. Defaults
+	// must therefore ship no built-in SubAgents.
+	if got := DefaultSettings().SubAgents; len(got) != 0 {
+		t.Fatalf("default settings must not ship built-in subagents, got %#v", subAgentIDs(got))
 	}
 }
 
@@ -166,7 +146,7 @@ func TestLoadLayeredWithStartupConfigKeepsGlobalSubAgents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"choreographer", "intimacy-choreographer", "context-planner", "writer", "reviewer", "fixer", "final-gate", "memory-patcher", "subagent-1"}
+	want := []string{"context-planner", "writer", "reviewer", "fixer", "final-gate", "memory-patcher", "subagent-1"}
 	if got := subAgentIDs(layered.Effective.SubAgents); !reflect.DeepEqual(got, want) {
 		t.Fatalf("effective subagents = %#v, want %#v", got, want)
 	}

@@ -488,47 +488,47 @@ func TestAgentBackendFiltersByAgentFrontmatterAndOverrides(t *testing.T) {
 func TestDelegatedSkillRoutesParentAndKeepsFullMethodForSpecialist(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	dir := filepath.Join(root, "action-choreography")
+	dir := filepath.Join(root, "specialist-demo")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	content := `---
-name: action-choreography
-description: choreograph action
-agent: ide,choreographer
-delegate: choreographer
+name: specialist-demo
+description: demo delegated skill
+agent: ide,specialist
+delegate: specialist
 ---
 
 # Full method
 
-[STAGE] then [BEATS]
+step one then step two
 `
 	if err := os.WriteFile(filepath.Join(dir, SkillFileName), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	dirs := []Directory{{Scope: ScopeBuiltin, Path: root}}
 
-	parentSkill, err := NewAgentBackend(dirs, "ide", nil).WithDelegates(map[string]bool{"choreographer": true}).Get(ctx, "action-choreography")
+	parentSkill, err := NewAgentBackend(dirs, "ide", nil).WithDelegates(map[string]bool{"specialist": true}).Get(ctx, "specialist-demo")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(parentSkill.Content, "subagent_type: choreographer") || strings.Contains(parentSkill.Content, "# Full method") {
+	if !strings.Contains(parentSkill.Content, "subagent_type: specialist") || strings.Contains(parentSkill.Content, "# Full method") {
 		t.Fatalf("parent should receive only delegation router: %q", parentSkill.Content)
 	}
 
-	specialistSkill, err := NewAgentBackend(dirs, "choreographer", nil).Get(ctx, "action-choreography")
+	specialistSkill, err := NewAgentBackend(dirs, "specialist", nil).Get(ctx, "specialist-demo")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(specialistSkill.Content, "# Full method") || strings.Contains(specialistSkill.Content, "subagent_type: choreographer") {
+	if !strings.Contains(specialistSkill.Content, "# Full method") || strings.Contains(specialistSkill.Content, "subagent_type: specialist") {
 		t.Fatalf("specialist should receive full method: %q", specialistSkill.Content)
 	}
 
-	fallbackSkill, err := NewAgentBackend(dirs, "ide", nil).Get(ctx, "action-choreography")
+	fallbackSkill, err := NewAgentBackend(dirs, "ide", nil).Get(ctx, "specialist-demo")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(fallbackSkill.Content, "[action-choreography BLOCKED]") ||
+	if !strings.Contains(fallbackSkill.Content, "[specialist-demo BLOCKED]") ||
 		!strings.Contains(fallbackSkill.Content, "Agents 页") ||
 		strings.Contains(fallbackSkill.Content, "# Full method") {
 		t.Fatalf("parent should receive an explicit blocker when specialist is unavailable: %q", fallbackSkill.Content)

@@ -14,7 +14,7 @@ import (
 	"denova/internal/workspacechange"
 )
 
-func TestWorkspaceReadFileToolReturnsPartialWindowWithoutRevision(t *testing.T) {
+func TestWorkspaceReadFileToolReturnsPartialWindowWithFullFileRevision(t *testing.T) {
 	content := "first\nsecond\nthird\nfourth"
 	path := writeTempFile(t, content)
 	base, err := newWorkspaceReadFileTool(newTestAgentFilesystemBackend(t))
@@ -36,18 +36,47 @@ func TestWorkspaceReadFileToolReturnsPartialWindowWithoutRevision(t *testing.T) 
 	if metadata.Schema != workspaceReadFileResultSchema || metadata.Offset != 2 || metadata.Limit != 1 {
 		t.Fatalf("unexpected read metadata: %#v", metadata)
 	}
-	var rawMetadata map[string]any
-	if err := json.Unmarshal([]byte(metadataLine), &rawMetadata); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := rawMetadata["revision"]; ok {
-		t.Fatalf("read_file exposed internal revision: %s", metadataLine)
-	}
-	if _, ok := rawMetadata["revision_scope"]; ok {
-		t.Fatalf("read_file exposed revision metadata: %s", metadataLine)
+	// The anchor hashes the FULL file (not the returned window) so a later turn
+	// can detect any change to the file and force a targeted re-read.
+	if metadata.Revision != workspacechange.Revision([]byte(content)) {
+		t.Fatalf("read metadata revision must anchor the full file: got %q want %q", metadata.Revision, workspacechange.Revision([]byte(content)))
 	}
 	if !strings.Contains(body, "     2\tsecond") || strings.Contains(body, "first") || strings.Contains(body, "third") {
 		t.Fatalf("partial cat-n selection mismatch: %q", body)
+	}
+}
+
+func TestWorkspaceReadFileToolOmitsRevisionForOversizedFile(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "huge.txt")
+	// Below the per-window selection cap but above the full-file revision cap, so
+	// the tool returns a window yet cannot compute a bounded anchor.
+	line := strings.Repeat("a", 4096) + "\n"
+	var builder strings.Builder
+	for builder.Len() <= workspaceReadFileRevisionMaxBytes {
+		builder.WriteString(line)
+	}
+	if err := os.WriteFile(path, []byte(builder.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base, err := newWorkspaceReadFileTool(newTestAgentFilesystemBackend(t, workspace), workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := base.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"`+path+`","offset":1,"limit":1}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadataLine, _, ok := strings.Cut(result, "\n")
+	if !ok {
+		t.Fatalf("read result has no metadata line: %q", result)
+	}
+	var metadata workspaceReadFileMetadata
+	if err := json.Unmarshal([]byte(metadataLine), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Revision != "" {
+		t.Fatalf("oversized file must omit the revision anchor, got %q", metadata.Revision)
 	}
 }
 

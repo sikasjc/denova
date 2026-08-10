@@ -16,14 +16,27 @@ type ToolResultContextPolicy struct {
 	AgentKind      string
 	Enabled        bool
 	MaxResultBytes int
+	// RetainedProseMaxBytes bounds the total bytes of unchanged read_file bodies
+	// kept verbatim across turns. 0 disables prose retention (read_file always
+	// collapses to a receipt at assembly time).
+	RetainedProseMaxBytes int
 }
+
+// ToolResultRevisionResolver returns the current full-file revision for an
+// absolute workspace path. ok is false when the path cannot be resolved to a
+// bounded revision (missing, oversized, or outside the workspace). A nil
+// resolver disables verbatim prose retention entirely — every retained
+// read_file body collapses to a receipt — preserving the pre-revision behavior
+// for the compaction source and non-IDE assembly paths.
+type ToolResultRevisionResolver func(path string) (string, bool)
 
 func resolveToolResultContextPolicy(cfg *config.Config, agentKind string) ToolResultContextPolicy {
 	settings := config.ResolveAgentContext(cfg, agentKind)
 	return ToolResultContextPolicy{
-		AgentKind:      strings.TrimSpace(agentKind),
-		Enabled:        settings.ToolResultRetentionEnabled,
-		MaxResultBytes: configToolResultMaxBytes(cfg),
+		AgentKind:             strings.TrimSpace(agentKind),
+		Enabled:               settings.ToolResultRetentionEnabled,
+		MaxResultBytes:        configToolResultMaxBytes(cfg),
+		RetainedProseMaxBytes: settings.RetainedProseMaxBytes,
 	}
 }
 
@@ -85,7 +98,7 @@ func (r *toolResultContextRecorder) RecordToolResult(toolName, toolCallID, conte
 	if r == nil || r.conversation == nil || meta.SubAgent || isPlanProtocolToolName(toolName) || !retainToolContextAcrossTurns(toolName, r.policy) || !r.retainedCall(toolCallID) {
 		return
 	}
-	msg := schema.ToolMessage(toolResultContextContent(toolName, content, r.policy), toolCallID, schema.WithToolName(toolName))
+	msg := schema.ToolMessage(recordTimeToolResultContent(toolName, content, r.policy), toolCallID, schema.WithToolName(toolName))
 	if err := r.conversation.AppendContextMessage(msg); err != nil {
 		logAgentContextPersistError("tool_result", err)
 	}
@@ -140,7 +153,28 @@ func toolResultContextContent(toolName, content string, policy ToolResultContext
 	return semanticToolResultContextContent(toolName, content, policy)
 }
 
+// recordTimeToolResultContent decides what a retained tool result stores when it
+// is first recorded. read_file bodies are stored verbatim so a later assembly can
+// keep them when the file is unchanged (cache-stable, no re-read) and only fall
+// back to a receipt when the revision moved or the byte budget is exceeded. All
+// other retained tools (read_lore_items, skill) have no revision concept, so they
+// collapse to their receipt immediately, exactly as before.
+func recordTimeToolResultContent(toolName, content string, policy ToolResultContextPolicy) string {
+	if normalizeToolName(toolName) == "read_file" {
+		return content
+	}
+	return semanticToolResultContextContent(toolName, content, policy)
+}
+
 func applyToolResultContextPolicy(messages []*schema.Message, policy ToolResultContextPolicy) []*schema.Message {
+	return applyToolResultContextPolicyWithResolver(messages, policy, nil)
+}
+
+// applyToolResultContextPolicyWithResolver applies the retention policy and, when
+// a resolver is supplied, keeps unchanged read_file bodies verbatim up to the
+// policy budget. A nil resolver reproduces the pre-revision behavior: every
+// retained read_file body collapses to a receipt.
+func applyToolResultContextPolicyWithResolver(messages []*schema.Message, policy ToolResultContextPolicy, resolver ToolResultRevisionResolver) []*schema.Message {
 	if len(messages) == 0 {
 		return messages
 	}
@@ -148,7 +182,7 @@ func applyToolResultContextPolicy(messages []*schema.Message, policy ToolResultC
 	if !policy.Enabled {
 		return removeToolContextMessages(messages)
 	}
-	return filterSemanticToolContextMessages(messages, policy)
+	return filterSemanticToolContextMessages(messages, policy, resolver)
 }
 
 func sanitizedToolContextMessage(msg *schema.Message, policy ToolResultContextPolicy) *schema.Message {

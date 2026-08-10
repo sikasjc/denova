@@ -60,6 +60,8 @@ type Config struct {
 	AgentToolResultLimitKB      int                          `toml:"agent_tool_result_limit_kb"`
 	ChapterFilenameFormat       string                       `toml:"-"`
 	VolumeDirFormat             string                       `toml:"-"`
+	OutlineFormat               string                       `toml:"-"`
+	ChapterGroupFormat          string                       `toml:"-"`
 	HideChapterBodyLiveOutput   bool                         `toml:"-"`
 	ChapterGroupMin             int                          `toml:"-"`
 	ChapterGroupMax             int                          `toml:"-"`
@@ -122,6 +124,8 @@ func LoadWithWorkspace(workspace string) (*Config, LayeredSettings, error) {
 		TraceRetentionRuns:          settingsInt(s.TraceRetentionRuns, DefaultTraceRetentionRuns),
 		ChapterFilenameFormat:       s.ChapterFilenameFormat,
 		VolumeDirFormat:             s.VolumeDirFormat,
+		OutlineFormat:               s.OutlineFormat,
+		ChapterGroupFormat:          s.ChapterGroupFormat,
 		HideChapterBodyLiveOutput:   settingsBool(s.HideChapterBodyLiveOutput, false),
 		ChapterGroupMin:             settingsInt(s.ChapterGroupMin, 3),
 		ChapterGroupMax:             settingsInt(s.ChapterGroupMax, 8),
@@ -220,6 +224,8 @@ func settingsFromConfig(cfg *Config) Settings {
 		Language:                 cfg.Language,
 		ChapterFilenameFormat:    cfg.ChapterFilenameFormat,
 		VolumeDirFormat:          cfg.VolumeDirFormat,
+		OutlineFormat:            cfg.OutlineFormat,
+		ChapterGroupFormat:       cfg.ChapterGroupFormat,
 		IDEImagePresetID:         cfg.IDEImagePresetID,
 		WritingSkillDefault:      cfg.WritingSkillDefault,
 		WritingComputeTier:       cfg.WritingComputeTier,
@@ -321,6 +327,8 @@ func Load() *Config {
 			TraceRetentionRuns:          settingsInt(d.TraceRetentionRuns, DefaultTraceRetentionRuns),
 			ChapterFilenameFormat:       d.ChapterFilenameFormat,
 			VolumeDirFormat:             d.VolumeDirFormat,
+			OutlineFormat:               d.OutlineFormat,
+			ChapterGroupFormat:          d.ChapterGroupFormat,
 			HideChapterBodyLiveOutput:   settingsBool(d.HideChapterBodyLiveOutput, false),
 			ChapterGroupMin:             settingsInt(d.ChapterGroupMin, 3),
 			ChapterGroupMax:             settingsInt(d.ChapterGroupMax, 8),

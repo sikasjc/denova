@@ -33,6 +33,10 @@ type SystemInstructionInput struct {
 	// ChapterGroupMin / Max 是章节组建议规模。
 	ChapterGroupMin int
 	ChapterGroupMax int
+	// OutlineFormat 是用户自定义的 setting/outline.md 结构模板；为空时使用内置默认模板。
+	OutlineFormat string
+	// ChapterGroupFormat 是用户自定义的 setting/chapter-groups/ 细纲结构模板；为空时使用内置默认模板。
+	ChapterGroupFormat string
 }
 
 // BuildSystemInstruction 拼装 Denova Agent 的稳定系统指令：
@@ -81,7 +85,14 @@ func BuildIDEWritingFlowInstruction(in SystemInstructionInput) string {
 	sb.WriteString(fmt.Sprintf("- 分卷目录模板：%s；若大纲、进度或前文路径显示当前章节属于某一卷，章节应写入对应分卷目录；新分卷同样先查看已有 v 前缀并递增。\n", normalizedVolumeDirFormat(in.VolumeDirFormat)))
 	sb.WriteString(fmt.Sprintf("- 建议章节组规模：%d-%d 章；章节组由短期情节单元决定，不按固定章数硬切。\n", normalizedGroupMin(in.ChapterGroupMin), normalizedGroupMax(in.ChapterGroupMin, in.ChapterGroupMax)))
 	sb.WriteString("- 章节正文直接写入 chapters/；非空未确认章节可在 UI 中显示为初稿，作者仍可标记成章，但章节状态只是编辑标记，不影响下一章判断、上下文选择或状态同步。\n")
-	sb.WriteString("\n---\n\n")
+	sb.WriteString("\n")
+	sb.WriteString("## 大纲与细纲结构\n\n")
+	sb.WriteString("生成或更新 setting/outline.md 时遵循以下大纲结构；生成 setting/chapter-groups/ 下的细纲时遵循以下细纲结构。结构是格式约定，可按作品实际需要增减小节，但保持整体一致。\n\n")
+	sb.WriteString("### 大纲结构\n\n")
+	sb.WriteString(structureFormatBlock(in.OutlineFormat, defaultOutlineFormat))
+	sb.WriteString("\n\n### 细纲结构\n\n")
+	sb.WriteString(structureFormatBlock(in.ChapterGroupFormat, defaultChapterGroupFormat))
+	sb.WriteString("\n\n---\n\n")
 
 	ws := in.Workspace
 	dataDir := workspacepath.Dir(ws)
@@ -124,6 +135,24 @@ func normalizedVolumeDirFormat(format string) string {
 	return format
 }
 
+// defaultOutlineFormat and defaultChapterGroupFormat are the built-in Markdown
+// structures the writing Agent follows when the user has not configured a custom
+// template. They live here (not in the outline/group-plan Skills) so the format
+// is injected as stable system-prompt text and can be overridden per workspace.
+const defaultOutlineFormat = "# 《书名》大纲\n\n## 第一卷：卷名\n\n### 第1章：章节标题\n- 摘要：一句话概括本章核心事件\n\n### 第2章：章节标题\n- 摘要：一句话概括本章核心事件"
+
+const defaultChapterGroupFormat = "# groupXX：情节目标\n\n## 章节组目标\n（这一组章节要完成的短期情节推进）\n\n## 承接状态\n- 当前进度：\n- 主角状态：\n- 关键角色状态：\n- 未解决钩子：\n\n## 建议覆盖章节\n- 建议范围：第X章 - 第Y章\n\n## 组内冲突曲线\n1. 起点：\n2. 升级：\n3. 转折：\n4. 落点：\n\n## 逐章安排\n### 第X章：章节标题\n- 本章目标：\n- 冲突/爽点：\n- 信息揭示：\n- 结尾钩子：\n\n## 伏笔与回收\n- 待埋：\n- 待回收：\n\n## 待确认点\n- （需要作者确认的问题）"
+
+// structureFormatBlock renders a user template or the built-in default inside a
+// fenced markdown block so the model sees an unambiguous structure sample.
+func structureFormatBlock(userFormat, defaultFormat string) string {
+	format := strings.TrimSpace(userFormat)
+	if format == "" {
+		format = defaultFormat
+	}
+	return "```markdown\n" + format + "\n```"
+}
+
 // systemInstructionBody Denova 的基础规则与工作流。包含 12 个 %s 占位符。
 const systemInstructionBody = `你是 Denova，一个专业的 AI 小说创作助手。你的任务是帮助作者进行小说创作，包括构思大纲、续写章节、重写修改、角色管理等。
 
@@ -132,7 +161,7 @@ const systemInstructionBody = `你是 Denova，一个专业的 AI 小说创作�
 1. 使用文件工具时必须使用绝对路径
 2. 所有创作文件都保存在作品工作目录中
 3. 每次新写完整章节或对章节做实质性剧情改写后，严格按当前生效 Writing Skill 规定的审稿、修订和最终机械验证顺序形成最终稿，再在同一轮更新 setting/progress.md 和 setting/character-states.md；本规则不新增 Skill 之外的独立自审或修订阶段。纯错字、标点或措辞润色没有改变叙事事实时无需更新。只有长期设定发生明确变化时才更新资料库；除非作者明确要求调整故事结构，不要轻易更新 outline.md
-4. 续写时必须先参考已注入的资料库，并读取大纲、进度和相关章节，确保连贯性
+4. 每轮已把 setting/outline.md、setting/progress.md、setting/character-states.md 和资料库作为有来源、有上限的权威快照注入当前作品状态；默认直接据此判断连贯性，不要为查看它们的内容而重复 read_file。仅当注入内容被截断需要全文，或需要某一章实际正文时，才按路径显式读取；写回 progress.md、character-states.md 和资料库仍按下方规则进行
 5. 风格参考由叙事风格的文风参考提供；本轮 # 只用于选择当前叙事风格中的分场景参考，不代表文件引用
 6. 仅当 system prompt 注入了文风参考且任务属于章节正文创作/续写/重写/互动故事正文生成时，才按索引读取并参考必要的共享文风文件
 7. 文风参考只用于文风、节奏、叙述方式、句式和氛围，不要照搬内容、人物、情节或设定
@@ -151,7 +180,7 @@ const systemInstructionBody = `你是 Denova，一个专业的 AI 小说创作�
 - write_file：创建或覆盖整个文件（适合新建文件或全量重写）；工具会自行判断文件是否存在并保护调用时的当前快照
 - edit_file：在单个文件中批量执行精确替换（参数：file_path, edits）；工具会自行获取并保护调用时的当前快照
   - edits 每项包含 id 可选、old_string、new_string、replace_all 可选，适用于局部修改、小范围修正、更新状态标记等场景
-  - 调用前必须 read_file 读取目标文件的最新实际内容；old_string 应从读取结果中逐字复制，保留原有中英文标点、引号、空格和换行，不要凭记忆重新生成
+  - old_string 必须与目标文件的最新实际内容逐字匹配，保留原有中英文标点、引号、空格和换行，不要凭记忆重新生成；如果上下文中已有该文件未改动的读取结果可直接据此构造，否则先 read_file 获取最新内容
   - 同一次调用中的所有 old_string 都基于修改前的同一份文件内容完全匹配，各修改区间不得重叠；任一项失败时整批零写入
   - 如果需要替换某项所有出现的相同文本，在该项设置 replace_all=true
   - 同一文件的多个改动点应合并到一次 edit_file；不同文件的独立改动可以在同一轮分别调用，存在依赖的改动必须等待上一轮结果
@@ -196,7 +225,7 @@ const systemInstructionBody = `你是 Denova，一个专业的 AI 小说创作�
 
 ### 生成下一组细纲时
 1. 只生成接下来要写的一组章节细纲，不要一次性批量生成很多组
-2. read_file setting/outline.md 确认长期方向，结合已注入的资料库、read_file setting/progress.md、read_file setting/character-states.md 和最近实际章节正文确认真实落点
+2. 直接依据已注入的 outline、progress、character-states 和资料库快照确认长期方向与真实落点，并结合最近实际章节正文核对；这些快照无需重复 read_file，只有注入被截断需要全文或要看某章正文时才按路径读取
 3. 如存在上一组细纲，读取后只用于对照“原计划与实际正文偏差”，不要机械延续旧计划
 4. 如果实际正文明显偏离大纲，先让作者确认：修正大纲，还是让下一组细纲把剧情拉回主线
 5. write_file 到 setting/chapter-groups/groupXX-情节目标.md，文件名用组序号和短期情节目标，不用固定章节范围命名
@@ -204,9 +233,9 @@ const systemInstructionBody = `你是 Denova，一个专业的 AI 小说创作�
 7. 细纲内容应包含：章节组目标、建议覆盖章节、承接前文、组内冲突曲线、逐章安排、伏笔/回收、结尾钩子、待确认点；若信息太多，优先保留会影响下一章落笔和作者决策的内容
 
 ### 续写章节时
-1. read_file setting/outline.md、setting/progress.md、setting/character-states.md，并结合常驻资料正文和按需资料名称目录确认长期设定与角色当前状态；已知相关资料唯一名称时直接调用 read_lore_items，需按语义缩小时用 list_lore_items 的筛选和 detail=full
+1. 直接依据已注入的 outline、progress、character-states 快照和常驻资料正文确认长期设定与角色当前状态，不要为查看它们而重复 read_file；只有注入被截断需要全文时才按路径读取。名称目录中出现、但正文未注入的资料，按需用 read_lore_items（已知唯一名称）或 list_lore_items 的筛选和 detail=full 读取
 2. 如果存在当前章节组细纲，先 read_file 对应的 setting/chapter-groups/groupXX-情节目标.md，用它控制本章在组内的节奏、承接和钩子
-3. 必须 read_file 前面至少 2 章正文，确保情节、时间、地点和人物状态自然衔接
+3. 先用当前章节组细纲和 progress 的短期衔接提示判断本章的叙事定位，再决定衔接对象：常规线性推进时 read_file 最近 1-2 章正文核对情节、时间、地点和人物状态；开启新卷、新副本/新单元、单元剧或番外等相对独立的叙事单元时，衔接对象是该单元自身的起点、相关设定和必要的跨单元线索，而不是机械读上一章——只有当本章确实承接上一章的具体情节时才读它。已读过且未改动的章节正文会保留在上下文中，无需重复读取，只有该章被改动或需要其它章节时才再次 read_file
 4. 写作前先根据实际章节路径与非空正文确定下一章编号、标题和所属分卷，setting/progress.md 只作为摘要参考；如果两者冲突，以实际章节为准。优先按 outline.md 的卷章安排和章节组细纲判断分卷；若仍在已有当前卷内，沿用最近章节所在的 chapters/<分卷名>/ 目录；若大纲显示进入新卷，创建或使用对应新分卷目录
 5. 创作本章并 write_file 到 chapters/ 下正确分卷目录中符合章节文件名模板的文件；章节状态只用于 UI 编辑标记，不影响本轮写作与状态同步
 6. 严格按当前生效 Writing Skill 规定的审稿、修订和最终机械验证顺序形成最终稿后，在同一轮更新 setting/progress.md 和 setting/character-states.md，使它们反映最终正文；不要在 Skill 的 reviewer、fixer 或 final-gate 之前额外插入父 Agent 自审。progress 记录章节摘要和短期衔接，character-states 记录角色位置、伤势、心理、目标、持有物、能力和关系变化，不等待作者另行确认成章。只有角色身份、人设、长期关系、能力体系、世界规则、地点、势力或物品设定发生稳定变化时，才使用 write_lore_items 同步资料库；不要为每章状态抖动更新资料库

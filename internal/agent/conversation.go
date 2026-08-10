@@ -78,6 +78,7 @@ type SessionConversation struct {
 	dynamicContextTitle   string
 	dynamicContext        string
 	userMessageReferences []session.UserMessageReference
+	revisionResolver      ToolResultRevisionResolver
 }
 
 func (c *SessionConversation) SetUserMessageReferences(references []session.UserMessageReference) {
@@ -112,13 +113,14 @@ func NewSessionConversationForAgentWithRuntimeContext(sess *session.Session, cfg
 	)
 }
 
-func NewSessionConversationForAgentWithRuntimeContexts(sess *session.Session, cfg *config.Config, agentKind, stableTitle, stableContent, dynamicTitle, dynamicContent string) *SessionConversation {
-	return NewSessionConversation(
-		sess,
+func NewSessionConversationForAgentWithRuntimeContexts(sess *session.Session, cfg *config.Config, agentKind, stableTitle, stableContent, dynamicTitle, dynamicContent string, extra ...SessionConversationOption) *SessionConversation {
+	options := []SessionConversationOption{
 		WithSessionContextConfig(cfg, agentKind),
 		WithSessionStableRuntimeContext(stableTitle, stableContent),
 		WithSessionRuntimeContext(dynamicTitle, dynamicContent),
-	)
+	}
+	options = append(options, extra...)
+	return NewSessionConversation(sess, options...)
 }
 
 type SessionConversationOption func(*SessionConversation)
@@ -141,6 +143,15 @@ func WithSessionStableRuntimeContext(title, content string) SessionConversationO
 	return func(c *SessionConversation) {
 		c.stableContextTitle = title
 		c.stableContext = content
+	}
+}
+
+// WithRevisionResolver supplies the current-revision lookup used to keep
+// unchanged read_file bodies verbatim across turns. Without it, retained
+// read_file results always collapse to receipts.
+func WithRevisionResolver(resolver ToolResultRevisionResolver) SessionConversationOption {
+	return func(c *SessionConversation) {
+		c.revisionResolver = resolver
 	}
 }
 
@@ -259,7 +270,7 @@ func (c *SessionConversation) modelMessages(agentMessage string) []*schema.Messa
 		history = append(history, NewContextCompactionSummaryMessage(compaction.Epoch, compaction.Summary))
 		history = append(history, tail...)
 	}
-	history = applyToolResultContextPolicy(history, c.ToolResultContextPolicy())
+	history = applyToolResultContextPolicyWithResolver(history, c.ToolResultContextPolicy(), c.revisionResolver)
 	if len(history) > 0 {
 		history[len(history)-1] = schema.UserMessage(agentMessage)
 	}

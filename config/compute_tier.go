@@ -10,7 +10,7 @@ import "strings"
 // 之间切换。Auto 档位中显式 SubAgentConfig.Model 优先于档位；manual 则强制全部写作
 // SubAgent 跟随当前主模型，确保“指定模型”不会被旧的逐 SubAgent 覆盖拆散。
 //
-// 档位只作用于写作（IDE）管线；游戏模式的 choreographer 仍继承 interactive_story，
+// 档位只作用于写作（IDE）管线；游戏模式的 SubAgent 仍继承 interactive_story，
 // 边界清晰、互不影响。
 type WritingComputeTier string
 
@@ -53,7 +53,7 @@ const (
 	// ComputeRoleProse 正文角色：直接决定成稿文笔质量（writer / fixer），各档都用 pro。
 	ComputeRoleProse ComputeRole = "prose"
 	// ComputeRoleReasoning 推理角色：结构化判断与多拍推演，思考比文笔更关键
-	// （reviewer / context-planner / choreographer / intimacy-choreographer）。
+	// （reviewer / context-planner）。
 	ComputeRoleReasoning ComputeRole = "reasoning"
 	// ComputeRoleMechanical 检查角色：低负载的判定或状态抽取（final-gate / memory-patcher）。
 	// 值沿用 "mechanical" 作为稳定 wire 值；面向用户的展示名为「检查」。

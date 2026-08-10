@@ -149,7 +149,7 @@ const agents = {
   'agents.computeTier.fastProfile': '快速模型',
   'agents.computeTier.summary': '各阶段生效模型',
   'agents.computeTier.role.prose': '正文（writer / fixer）',
-  'agents.computeTier.role.reasoning': '推理（reviewer / 规划 / 编排）',
+  'agents.computeTier.role.reasoning': '推理（reviewer / 规划）',
   'agents.computeTier.role.mechanical': '检查（门禁 / 状态补丁）',
   'agents.computeTier.model.pro': 'pro（继承主模型）',
   'agents.computeTier.thinking.on': '思考开',

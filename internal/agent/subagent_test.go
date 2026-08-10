@@ -81,8 +81,9 @@ func TestBuildDeepAgentPassesGeneralAndConfiguredSubAgents(t *testing.T) {
 	}
 }
 
-func TestBuildDeepAgentIncludesBuiltInChoreographySubAgents(t *testing.T) {
+func TestBuildDeepAgentIncludesConfiguredSubAgents(t *testing.T) {
 	off := false
+	on := true
 	var captured *deep.Config
 	previous := newDeepAgent
 	newDeepAgent = func(_ context.Context, cfg *deep.Config) (adk.ResumableAgent, error) {
@@ -92,7 +93,10 @@ func TestBuildDeepAgentIncludesBuiltInChoreographySubAgents(t *testing.T) {
 	}
 	t.Cleanup(func() { newDeepAgent = previous })
 
-	defaults := config.DefaultSettings()
+	configured := []config.SubAgentConfig{
+		{ID: "reviewer", Description: "review", SystemPrompt: "review only", Enabled: &on, Parents: []string{config.AgentKindIDE}},
+		{ID: "writer", Description: "write", SystemPrompt: "write draft", Enabled: &on, Parents: []string{config.AgentKindIDE}},
+	}
 	_, err := buildDeepAgent(context.Background(), &config.Config{
 		OpenAIBaseURL: "https://example.invalid",
 		OpenAIModel:   "test-model",
@@ -108,7 +112,7 @@ func TestBuildDeepAgentIncludesBuiltInChoreographySubAgents(t *testing.T) {
 				WebSearch:    &off,
 			},
 		},
-		SubAgents: defaults.SubAgents,
+		SubAgents: configured,
 	}, deepAgentSpec{
 		Kind:        config.AgentKindIDE,
 		Name:        "DenovaAgent",
@@ -119,14 +123,14 @@ func TestBuildDeepAgentIncludesBuiltInChoreographySubAgents(t *testing.T) {
 		t.Fatal(err)
 	}
 	if captured == nil || len(captured.SubAgents) != 2 {
-		t.Fatalf("expected built-in choreography subagents, got %#v", captured)
+		t.Fatalf("expected configured subagents wired into deep agent, got %#v", captured)
 	}
 	got := []string{
 		captured.SubAgents[0].Name(context.Background()),
 		captured.SubAgents[1].Name(context.Background()),
 	}
-	if strings.Join(got, ",") != "choreographer,intimacy-choreographer" {
-		t.Fatalf("unexpected built-in choreography subagents: %#v", got)
+	if strings.Join(got, ",") != "reviewer,writer" {
+		t.Fatalf("unexpected wired subagents: %#v", got)
 	}
 }
 
@@ -134,21 +138,21 @@ func TestAvailableSubAgentIDsRespectParentAndEnabledState(t *testing.T) {
 	off := false
 	available := availableSubAgentIDs(&config.Config{SubAgents: []config.SubAgentConfig{
 		{
-			ID:           "choreographer",
-			Description:  "action",
-			SystemPrompt: "route action",
+			ID:           "reviewer",
+			Description:  "review",
+			SystemPrompt: "route review",
 			Parents:      []string{config.AgentKindIDE, config.AgentKindInteractiveStory},
 		},
 		{
-			ID:           "intimacy-choreographer",
-			Description:  "intimacy",
-			SystemPrompt: "route intimacy",
+			ID:           "writer",
+			Description:  "write",
+			SystemPrompt: "route write",
 			Enabled:      &off,
 			Parents:      []string{config.AgentKindIDE},
 		},
 	}}, config.AgentKindIDE)
 
-	if !available["choreographer"] || available["intimacy-choreographer"] {
+	if !available["reviewer"] || available["writer"] {
 		t.Fatalf("available delegates = %#v", available)
 	}
 }

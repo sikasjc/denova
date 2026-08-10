@@ -86,6 +86,8 @@ const settings = {
   'settings.ide.volumeDirFormat': 'Volume Directory Template',
   'settings.ide.chapterGroupMax': 'Max Chapters per Group',
   'settings.ide.chapterGroupMin': 'Min Chapters per Group',
+  'settings.ide.outlineFormat': 'Outline Structure Template',
+  'settings.ide.chapterGroupFormat': 'Chapter-Group Structure Template',
   'settings.ide.defaultTeller': 'Default Narrative',
   'settings.ide.hideNovelChapterBodyInLiveOutput': 'Hide Chapter Body from Agent Stream',
   'settings.ide.hideNovelChapterBodyInLiveOutputHelp': 'When enabled, chapter body is hidden from the Agent stream. Files are still written normally.',

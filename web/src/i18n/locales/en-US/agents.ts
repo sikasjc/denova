@@ -149,7 +149,7 @@ const agents = {
   'agents.computeTier.fastProfile': 'Fast Model',
   'agents.computeTier.summary': 'Effective model per stage',
   'agents.computeTier.role.prose': 'Prose (writer / fixer)',
-  'agents.computeTier.role.reasoning': 'Reasoning (reviewer / planner / choreography)',
+  'agents.computeTier.role.reasoning': 'Reasoning (reviewer / planner)',
   'agents.computeTier.role.mechanical': 'Check (gate / memory patch)',
   'agents.computeTier.model.pro': 'pro (inherit main model)',
   'agents.computeTier.thinking.on': 'thinking on',

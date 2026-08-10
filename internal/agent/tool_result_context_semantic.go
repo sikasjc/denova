@@ -129,6 +129,22 @@ func retainedFileReadReceipt(content string) string {
 	return marshalRetainedToolReceipt(receipt)
 }
 
+// parseReadFileAnchor extracts the full-file revision anchor and path from a
+// stored read_file result's JSON metadata first line. ok is false for tool
+// errors, unknown implementations, or when no anchor was captured (e.g. the file
+// exceeded the revision cap), in which case the body cannot be safely retained
+// verbatim across turns.
+func parseReadFileAnchor(content string) (revision, path string, ok bool) {
+	firstLine, _, _ := strings.Cut(content, "\n")
+	var metadata workspaceReadFileMetadata
+	if json.Unmarshal([]byte(strings.TrimSpace(firstLine)), &metadata) != nil ||
+		metadata.Schema != workspaceReadFileResultSchema ||
+		strings.TrimSpace(metadata.FilePath) == "" {
+		return "", "", false
+	}
+	return strings.TrimSpace(metadata.Revision), strings.TrimSpace(metadata.FilePath), true
+}
+
 func retainedSkillReceipt(content string) string {
 	const (
 		namePrefix = "Launching skill:"
@@ -240,7 +256,7 @@ func appendUniqueRetainedValue(values []string, value string) []string {
 	return append(values, value)
 }
 
-func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolResultContextPolicy) []*schema.Message {
+func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolResultContextPolicy, resolver ToolResultRevisionResolver) []*schema.Message {
 	type retainedCall struct {
 		toolName  string
 		arguments string
@@ -287,6 +303,43 @@ func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolRe
 		}
 	}
 
+	// Decide which read_file bodies to keep verbatim. Scanning newest→oldest lets
+	// the freshest unchanged prose win the byte budget; everything else collapses
+	// to a receipt below. This only chooses body-vs-receipt — the keep/drop of the
+	// message and its paired assistant call is still governed by the pairing gates
+	// (valid, retain, count==1) in the main loop, so no tool_call is orphaned.
+	keepBodyCallIDs := make(map[string]struct{})
+	if resolver != nil && policy.RetainedProseMaxBytes > 0 {
+		usedBytes := 0
+		for i := len(messages) - 1; i >= 0; i-- {
+			msg := messages[i]
+			if msg == nil || msg.Role != schema.Tool {
+				continue
+			}
+			callID := strings.TrimSpace(msg.ToolCallID)
+			callPolicy, ok := callsByID[callID]
+			if !ok || !callPolicy.valid || !callPolicy.retain || resultCountsByID[callID] != 1 {
+				continue
+			}
+			if callPolicy.toolName != "read_file" || isRetainedToolReceipt(msg.Content) {
+				continue
+			}
+			anchor, path, parsed := parseReadFileAnchor(msg.Content)
+			if !parsed || anchor == "" {
+				continue
+			}
+			current, resolved := resolver(path)
+			if !resolved || current != anchor {
+				continue
+			}
+			if usedBytes+len(msg.Content) > policy.RetainedProseMaxBytes {
+				continue
+			}
+			usedBytes += len(msg.Content)
+			keepBodyCallIDs[callID] = struct{}{}
+		}
+	}
+
 	filtered := make([]*schema.Message, 0, len(messages))
 	for _, msg := range messages {
 		if msg == nil {
@@ -327,6 +380,12 @@ func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolRe
 			// Resolve it from the paired assistant call so filtering and semantic
 			// compaction always make the same decision for both halves.
 			next.ToolName = callPolicy.toolName
+			if _, keepBody := keepBodyCallIDs[callID]; keepBody {
+				// The file is unchanged since it was read: keep the exact body the
+				// model already saw so the reusable prefix stays byte-identical.
+				filtered = append(filtered, &next)
+				continue
+			}
 			filtered = append(filtered, sanitizedToolContextMessage(&next, policy))
 		default:
 			filtered = append(filtered, msg)

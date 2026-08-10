@@ -223,6 +223,8 @@ func buildIDEBuiltinInstruction(cfg *config.Config, state *book.State, teller ID
 		VolumeDirFormat:        cfg.VolumeDirFormat,
 		ChapterGroupMin:        cfg.ChapterGroupMin,
 		ChapterGroupMax:        cfg.ChapterGroupMax,
+		OutlineFormat:          cfg.OutlineFormat,
+		ChapterGroupFormat:     cfg.ChapterGroupFormat,
 	})
 	if imagePresetSystem := imagePresetSystemInstruction(teller); imagePresetSystem != "" {
 		builtIn = strings.TrimSpace(builtIn) + "\n\n" + imagePresetSystem
@@ -611,6 +613,8 @@ func ideFlowInstruction(cfg *config.Config, workspace string) string {
 		VolumeDirFormat:       cfg.VolumeDirFormat,
 		ChapterGroupMin:       cfg.ChapterGroupMin,
 		ChapterGroupMax:       cfg.ChapterGroupMax,
+		OutlineFormat:         cfg.OutlineFormat,
+		ChapterGroupFormat:    cfg.ChapterGroupFormat,
 	})
 }
 
