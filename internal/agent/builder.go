@@ -382,7 +382,7 @@ func buildConfiguredSubAgent(ctx context.Context, cfg *config.Config, parent dee
 	if err != nil {
 		return nil, err
 	}
-	return adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
+	configuredAgent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:          sub.ID,
 		Description:   sub.Description,
 		Instruction:   buildSubAgentInstruction(parent, sub),
@@ -398,6 +398,13 @@ func buildConfiguredSubAgent(ctx context.Context, cfg *config.Config, parent dee
 		},
 		ModelRetryConfig: modelRetryConfig(cfg, nil),
 	})
+	if err != nil {
+		return nil, err
+	}
+	if sub.ID == "reviewer" {
+		return requiredOutputAgent{agent: configuredAgent}, nil
+	}
+	return configuredAgent, nil
 }
 
 func modelRetryConfig(cfg *config.Config, outputGuard func(context.Context, *adk.RetryContext) *adk.RetryDecision) *adk.ModelRetryConfig {

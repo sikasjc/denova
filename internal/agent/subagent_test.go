@@ -22,6 +22,32 @@ func TestConfigMaxIterationDefaultsToUnlimited(t *testing.T) {
 	}
 }
 
+func TestRequiredOutputAgentRejectsEmptyAssistantResult(t *testing.T) {
+	inner := fakeEventAgent{
+		name:        "reviewer",
+		description: "review",
+		events: []*adk.AgentEvent{{
+			Output: &adk.AgentOutput{MessageOutput: &adk.MessageVariant{
+				Message: schema.AssistantMessage("", nil),
+			}},
+		}},
+	}
+	agent := requiredOutputAgent{agent: inner}
+
+	iterator := agent.Run(context.Background(), &adk.AgentInput{})
+	var last *adk.AgentEvent
+	for {
+		event, ok := iterator.Next()
+		if !ok {
+			break
+		}
+		last = event
+	}
+	if last == nil || last.Err == nil || !strings.Contains(last.Err.Error(), "返回空结果") {
+		t.Fatalf("empty reviewer result should become an error, got %#v", last)
+	}
+}
+
 func TestBuildDeepAgentPassesGeneralAndConfiguredSubAgents(t *testing.T) {
 	off := false
 	var captured *deep.Config
@@ -389,6 +415,25 @@ func (a *fakeDisplayAppender) AppendDisplayEventContent(id, role, delta string) 
 type fakeAgent struct {
 	name        string
 	description string
+}
+
+type fakeEventAgent struct {
+	name        string
+	description string
+	events      []*adk.AgentEvent
+}
+
+func (f fakeEventAgent) Name(context.Context) string        { return f.name }
+func (f fakeEventAgent) Description(context.Context) string { return f.description }
+func (f fakeEventAgent) Run(context.Context, *adk.AgentInput, ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
+	iterator, generator := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
+	go func() {
+		for _, event := range f.events {
+			generator.Send(event)
+		}
+		generator.Close()
+	}()
+	return iterator
 }
 
 func (f fakeAgent) Name(context.Context) string        { return f.name }
