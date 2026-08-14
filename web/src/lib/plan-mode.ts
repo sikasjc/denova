@@ -1,3 +1,5 @@
+import { takeTrimmedCodePointPrefix } from './bounded-text'
+
 type PlanQuestionType = 'single' | 'multi'
 
 interface PlanQuestionOption {
@@ -134,7 +136,7 @@ function readString(value: unknown) {
 }
 
 function truncatePlanContext(content: string) {
-  const chars = Array.from(content.trim())
-  if (chars.length <= MAX_APPROVED_PLAN_CHARS) return content.trim()
-  return `${chars.slice(0, MAX_APPROVED_PLAN_CHARS).join('').trimEnd()}\n\n[truncated to ${MAX_APPROVED_PLAN_CHARS} chars]`
+  const plan = takeTrimmedCodePointPrefix(content, MAX_APPROVED_PLAN_CHARS)
+  if (!plan.truncated) return plan.text
+  return `${plan.text}\n\n[truncated to ${MAX_APPROVED_PLAN_CHARS} chars]`
 }

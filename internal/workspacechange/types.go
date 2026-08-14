@@ -64,6 +64,12 @@ type TextEdit struct {
 	OldString  string `json:"old_string"`
 	NewString  string `json:"new_string"`
 	ReplaceAll bool   `json:"replace_all,omitempty"`
+	// StartLine and EndLine select complete 1-based source lines. EndLine is
+	// inclusive and defaults to StartLine. A line selector is mutually
+	// exclusive with OldString/ReplaceAll and is resolved against the same
+	// revision-checked base snapshot as exact replacements.
+	StartLine int `json:"start_line,omitempty"`
+	EndLine   int `json:"end_line,omitempty"`
 }
 
 type ApplyEditsRequest struct {

@@ -122,6 +122,46 @@ describe('Agent MessageList', () => {
     expect(screen.queryByText('正在思考…')).not.toBeInTheDocument()
   })
 
+  it('reviewer 超长 thinking 的主卡片预览不会展开整段字符数组', () => {
+    const longThinking = '审'.repeat(500_000)
+    const originalArrayFrom = Array.from
+    const arrayFrom = vi.spyOn(Array, 'from').mockImplementation(((value: ArrayLike<unknown> | Iterable<unknown>, mapFn?: (value: unknown, index: number) => unknown, thisArg?: unknown) => {
+      if (value === longThinking) throw new Error('reviewer thinking was expanded into a full character array')
+      return mapFn
+        ? originalArrayFrom(value, mapFn, thisArg)
+        : originalArrayFrom(value)
+    }) as typeof Array.from)
+
+    try {
+      renderMessageList(
+        <MessageList
+          isStreaming
+          activityContent=""
+          onOpenSubAgentSession={vi.fn()}
+          messages={[{
+            id: 'reviewer-running',
+            role: 'assistant',
+            metadata: {
+              run_id: 'run-review',
+              agent_name: 'reviewer',
+              root_agent_name: 'DenovaAgent',
+              subagent: true,
+              subagent_session_id: 'run-review-subagent-01-reviewer',
+              subagent_type: 'reviewer',
+            },
+            parts: [{ type: 'reasoning', text: longThinking, state: 'streaming' }],
+          }] as AgentUIMessage[]}
+        />,
+      )
+
+      expect(screen.getByText('reviewer 输出')).toBeInTheDocument()
+      expect(screen.getByText('正在流式输出')).toBeInTheDocument()
+      expect(arrayFrom).not.toHaveBeenCalledWith(longThinking)
+    } finally {
+      arrayFrom.mockRestore()
+    }
+  })
+
   it('尚无真实流式内容时直接以 Shimmer 显示思考状态', () => {
     renderMessageList(
       <MessageList

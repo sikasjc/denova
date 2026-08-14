@@ -35,13 +35,13 @@ var workspaceReadFileToolDescription = fmt.Sprintf(`Read a text file and return 
 - file_path must be an absolute path.
 - By default this tool reads up to %d lines from line 1. Use offset and limit to continue reading later sections.
 - The first result line is JSON pagination metadata.
-- The selected text after the metadata is returned in cat -n format.
+- Every selected source line after the metadata is returned in cat -n format with its stable 1-based line number. To edit by line, pass these numbers as edit_file start_line/end_line and copy the metadata revision to edit_file file_revision.
 
 读取文本文件，返回有界的带行号选段。
 - file_path 必须是绝对路径。
 - 默认从第 1 行开始最多读取 %d 行；需要继续读取后续部分时使用 offset 和 limit。
 - 返回结果第一行是 JSON 分页元数据。
-- 元数据后的选段使用 cat -n 行号格式。`, agentFileReadDefaultLimitLines, agentFileReadDefaultLimitLines)
+- 元数据后的每一条源文件行都使用 cat -n 格式展示稳定的 1-based 行号；按行修改时，将这些行号作为 edit_file 的 start_line/end_line，并把元数据中的 revision 传入 edit_file 的 file_revision。`, agentFileReadDefaultLimitLines, agentFileReadDefaultLimitLines)
 
 type workspaceReadFileInput struct {
 	FilePath string `json:"file_path" jsonschema:"required,description=Absolute path of the text file to read"`
@@ -200,7 +200,8 @@ func selectWorkspaceFileWindow(ctx context.Context, source io.Reader, offset, li
 	return selected.String(), nil
 }
 
-func resolveWorkspaceReadPath(workspace, input string) (absolute, relative string, err error) {	input = strings.TrimSpace(input)
+func resolveWorkspaceReadPath(workspace, input string) (absolute, relative string, err error) {
+	input = strings.TrimSpace(input)
 	if input == "" {
 		return "", "", fmt.Errorf("file_path is required")
 	}
@@ -324,9 +325,16 @@ func normalizeWorkspaceReadWindow(offset, limit int) (int, int) {
 }
 
 func formatWorkspaceLineNumbers(content string, startLine int) string {
+	if content == "" {
+		return ""
+	}
 	lines := strings.Split(content, "\n")
+	if strings.HasSuffix(content, "\n") {
+		lines = lines[:len(lines)-1]
+	}
 	var result strings.Builder
 	for index, line := range lines {
+		line = strings.TrimSuffix(line, "\r")
 		if index < len(lines)-1 {
 			fmt.Fprintf(&result, "%6d\t%s\n", startLine+index, line)
 		} else {

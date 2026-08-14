@@ -18,6 +18,11 @@ type plannedSpan struct {
 	afterEnd   int
 }
 
+type sourceLineSpan struct {
+	start int
+	end   int
+}
+
 // ApplyEdits validates every edit against one immutable base snapshot and
 // commits the resulting file exactly once.
 func (s *Service) ApplyEdits(ctx context.Context, req ApplyEditsRequest) (ChangeSet, error) {
@@ -176,6 +181,8 @@ func planTextEdits(path, base string, requested []TextEdit, autoAccept bool) (st
 	applied := make([]AppliedEdit, len(requested))
 	spans := make([]plannedSpan, 0, len(requested))
 	seenIDs := map[string]bool{}
+	sourceLines := indexSourceLines(base)
+	lineEnding := preferredLineEnding(base)
 	for index, edit := range requested {
 		editID := strings.TrimSpace(edit.ID)
 		if editID == "" {
@@ -185,8 +192,49 @@ func planTextEdits(path, base string, requested []TextEdit, autoAccept bool) (st
 			return "", nil, invalidEdit(path, index, editID, "duplicate edit id", nil)
 		}
 		seenIDs[editID] = true
+		lineMode := edit.StartLine != 0 || edit.EndLine != 0
+		if lineMode {
+			if edit.OldString != "" || edit.ReplaceAll {
+				return "", nil, invalidEdit(path, index, editID, "line-based edits cannot include old_string or replace_all", nil)
+			}
+			endLine := edit.EndLine
+			if endLine == 0 {
+				endLine = edit.StartLine
+			}
+			if edit.StartLine <= 0 || endLine < edit.StartLine || endLine > len(sourceLines) {
+				return "", nil, invalidEdit(path, index, editID, "line range is outside the file", map[string]any{
+					"start_line": edit.StartLine,
+					"end_line":   endLine,
+					"line_count": len(sourceLines),
+				})
+			}
+			start := sourceLines[edit.StartLine-1].start
+			end := sourceLines[endLine-1].end
+			oldString := base[start:end]
+			selectedTerminator := lineTerminator(oldString)
+			replacementLineEnding := selectedTerminator
+			if replacementLineEnding == "" {
+				replacementLineEnding = lineEnding
+			}
+			newString := normalizeLineReplacement(edit.NewString, replacementLineEnding, selectedTerminator != "")
+			if oldString == newString {
+				return "", nil, invalidEdit(path, index, editID, "line replacement does not change the selected range", map[string]any{
+					"start_line": edit.StartLine,
+					"end_line":   endLine,
+				})
+			}
+			applied[index] = AppliedEdit{
+				ID:           editID,
+				OldString:    oldString,
+				NewString:    newString,
+				ReviewStatus: reviewStatus,
+			}
+			spans = append(spans, plannedSpan{editIndex: index, start: start, end: end})
+			continue
+		}
+
 		if edit.OldString == "" {
-			return "", nil, invalidEdit(path, index, editID, "old_string must not be empty", nil)
+			return "", nil, invalidEdit(path, index, editID, "provide start_line/end_line or a non-empty old_string", nil)
 		}
 		if edit.OldString == edit.NewString {
 			return "", nil, invalidEdit(path, index, editID, "new_string must differ from old_string", nil)
@@ -249,6 +297,58 @@ func planTextEdits(path, base string, requested []TextEdit, autoAccept bool) (st
 		result = result[:span.start] + applied[span.editIndex].NewString + result[span.end:]
 	}
 	return result, applied, nil
+}
+
+func indexSourceLines(content string) []sourceLineSpan {
+	if content == "" {
+		return nil
+	}
+	lines := make([]sourceLineSpan, 0, strings.Count(content, "\n")+1)
+	start := 0
+	for index := 0; index < len(content); index++ {
+		if content[index] != '\n' {
+			continue
+		}
+		lines = append(lines, sourceLineSpan{start: start, end: index + 1})
+		start = index + 1
+	}
+	if start < len(content) {
+		lines = append(lines, sourceLineSpan{start: start, end: len(content)})
+	}
+	return lines
+}
+
+func preferredLineEnding(content string) string {
+	index := strings.IndexByte(content, '\n')
+	if index > 0 && content[index-1] == '\r' {
+		return "\r\n"
+	}
+	return "\n"
+}
+
+func lineTerminator(content string) string {
+	if strings.HasSuffix(content, "\r\n") {
+		return "\r\n"
+	}
+	if strings.HasSuffix(content, "\n") {
+		return "\n"
+	}
+	return ""
+}
+
+func normalizeLineReplacement(content, lineEnding string, preserveTerminator bool) string {
+	if content == "" {
+		return ""
+	}
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	if lineEnding != "\n" {
+		normalized = strings.ReplaceAll(normalized, "\n", lineEnding)
+	}
+	if preserveTerminator && !strings.HasSuffix(normalized, lineEnding) {
+		normalized += lineEnding
+	}
+	return normalized
 }
 
 func literalMatches(content, needle string) []int {

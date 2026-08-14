@@ -77,6 +77,95 @@ func TestApplyEditsReplaceAll(t *testing.T) {
 	}
 }
 
+func TestApplyEditsPrefersLineRangesFromOneBaseSnapshot(t *testing.T) {
+	const before = "one\ntwo\nthree\nfour\n"
+	service, path := newTestServiceWithFile(t, before)
+	change, err := service.ApplyEdits(context.Background(), ApplyEditsRequest{
+		Path:         path,
+		BaseRevision: Revision([]byte(before)),
+		Edits: []TextEdit{
+			{ID: "ending", StartLine: 4, NewString: "FOUR"},
+			{ID: "middle", StartLine: 2, EndLine: 3, NewString: "TWO\nTHREE"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ApplyEdits failed: %v", err)
+	}
+	if got := readTestFile(t, service.workspace, path); got != "one\nTWO\nTHREE\nFOUR\n" {
+		t.Fatalf("unexpected line-edit result %q", got)
+	}
+	if len(change.Edits) != 2 ||
+		change.Edits[0].OldString != "four\n" ||
+		change.Edits[0].NewString != "FOUR\n" ||
+		change.Edits[1].OldString != "two\nthree\n" {
+		t.Fatalf("line edits were not projected to exact reviewed text: %#v", change.Edits)
+	}
+}
+
+func TestApplyEditsLineRangesPreserveCRLFAndFinalLineSemantics(t *testing.T) {
+	t.Run("CRLF range", func(t *testing.T) {
+		const before = "one\r\ntwo\r\nthree\r\n"
+		service, path := newTestServiceWithFile(t, before)
+		_, err := service.ApplyEdits(context.Background(), ApplyEditsRequest{
+			Path:         path,
+			BaseRevision: Revision([]byte(before)),
+			Edits:        []TextEdit{{StartLine: 2, NewString: "TWO\nSECOND"}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := readTestFile(t, service.workspace, path); got != "one\r\nTWO\r\nSECOND\r\nthree\r\n" {
+			t.Fatalf("CRLF line edit changed newline semantics: %q", got)
+		}
+	})
+
+	t.Run("unterminated final line", func(t *testing.T) {
+		const before = "one\ntwo"
+		service, path := newTestServiceWithFile(t, before)
+		_, err := service.ApplyEdits(context.Background(), ApplyEditsRequest{
+			Path:         path,
+			BaseRevision: Revision([]byte(before)),
+			Edits:        []TextEdit{{StartLine: 2, NewString: "TWO"}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := readTestFile(t, service.workspace, path); got != "one\nTWO" {
+			t.Fatalf("final line unexpectedly gained a terminator: %q", got)
+		}
+	})
+}
+
+func TestApplyEditsRejectsInvalidOrOverlappingLineRangesAtomically(t *testing.T) {
+	const before = "one\ntwo\nthree\n"
+	cases := []struct {
+		name  string
+		edits []TextEdit
+	}{
+		{name: "out of range", edits: []TextEdit{{StartLine: 4, NewString: "four"}}},
+		{name: "reverse range", edits: []TextEdit{{StartLine: 3, EndLine: 2, NewString: "bad"}}},
+		{name: "mixed selectors", edits: []TextEdit{{StartLine: 2, OldString: "two", NewString: "bad"}}},
+		{name: "overlap", edits: []TextEdit{
+			{ID: "first", StartLine: 1, EndLine: 2, NewString: "first"},
+			{ID: "second", StartLine: 2, EndLine: 3, NewString: "second"},
+		}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			service, path := newTestServiceWithFile(t, before)
+			_, err := service.ApplyEdits(context.Background(), ApplyEditsRequest{
+				Path:         path,
+				BaseRevision: Revision([]byte(before)),
+				Edits:        test.edits,
+			})
+			assertChangeErrorCode(t, err, ErrorCodeInvalidEdit)
+			if got := readTestFile(t, service.workspace, path); got != before {
+				t.Fatalf("invalid line batch mutated file: %q", got)
+			}
+		})
+	}
+}
+
 func TestApplyEditsRejectsStaleRevision(t *testing.T) {
 	service, path := newTestServiceWithFile(t, "first")
 	_, revision, err := service.ReadFile(path)

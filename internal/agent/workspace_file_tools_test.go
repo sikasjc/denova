@@ -91,18 +91,22 @@ func TestWorkspaceEditFileToolBatchesOneFileAndReturnsBoundedReceipt(t *testing.
 	ctx := ContextWithRunObserver(context.Background(), observer)
 	result, err := invokable.InvokableRun(ctx, `{
         "file_path":"chapters/ch01.md",
+        "file_revision":"sha256:before",
         "edits":[
-          {"id":"opening","old_string":"old 1","new_string":"new 1"},
+          {"id":"opening","start_line":12,"end_line":14,"new_string":"new 1"},
           {"id":"ending","old_string":"old 2","new_string":"new 2","replace_all":true}
         ]
       }`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if service.readCalls != 1 || service.readPath != "chapters/ch01.md" || service.applyRequest.Path != "chapters/ch01.md" || service.applyRequest.BaseRevision != "sha256:before" {
+	if service.readCalls != 0 || service.applyRequest.Path != "chapters/ch01.md" || service.applyRequest.BaseRevision != "sha256:before" {
 		t.Fatalf("unexpected request: %#v", service.applyRequest)
 	}
-	if len(service.applyRequest.Edits) != 2 || !service.applyRequest.Edits[1].ReplaceAll {
+	if len(service.applyRequest.Edits) != 2 ||
+		service.applyRequest.Edits[0].StartLine != 12 ||
+		service.applyRequest.Edits[0].EndLine != 14 ||
+		!service.applyRequest.Edits[1].ReplaceAll {
 		t.Fatalf("batch edits were not preserved: %#v", service.applyRequest.Edits)
 	}
 	if service.applyRequest.Metadata.Origin != workspacechange.OriginAgent ||
@@ -127,9 +131,11 @@ func TestWorkspaceEditFileToolBatchesOneFileAndReturnsBoundedReceipt(t *testing.
 
 func TestWorkspaceFileToolDescriptionsRequireSafePatchRecovery(t *testing.T) {
 	for _, expected := range []string{
-		"copy every old_string verbatim",
+		"Prefer start_line/end_line",
+		"read_file returns 1-based line numbers",
 		"Do not fall back to a full-file replacement",
-		"逐字复制 old_string",
+		"优先使用 start_line/end_line",
+		"read_file 会为此返回从 1 开始的行号",
 		"不要降级为整文件覆盖",
 	} {
 		if !strings.Contains(workspaceEditFileToolDescription, expected) {
@@ -180,7 +186,7 @@ func TestWorkspaceEditFileToolPublishesBatchSchema(t *testing.T) {
 	if err := json.Unmarshal(data, &encoded); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"file_path", "edits"} {
+	for _, name := range []string{"file_path", "file_revision", "edits"} {
 		if _, ok := encoded.JSONSchema.Properties[name]; !ok {
 			t.Fatalf("batch edit schema is missing root property %q: %s", name, data)
 		}
@@ -192,6 +198,54 @@ func TestWorkspaceEditFileToolPublishesBatchSchema(t *testing.T) {
 		if _, ok := encoded.JSONSchema.Properties[legacy]; ok {
 			t.Fatalf("legacy single-edit property %q remains at schema root: %s", legacy, data)
 		}
+	}
+	var editsProperty struct {
+		Items struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+			Required   []string                   `json:"required"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(encoded.JSONSchema.Properties["edits"], &editsProperty); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"start_line", "end_line", "old_string", "new_string", "replace_all"} {
+		if _, ok := editsProperty.Items.Properties[name]; !ok {
+			t.Fatalf("edit item schema is missing %q: %s", name, data)
+		}
+	}
+	if containsStringValue(editsProperty.Items.Required, "old_string") {
+		t.Fatalf("old_string must be optional when line selectors are available: %s", data)
+	}
+}
+
+func TestWorkspaceEditFileLineModeRequiresAndForwardsReadRevision(t *testing.T) {
+	service := &recordingWorkspaceChangeService{workspace: t.TempDir(), readRevision: "sha256:current"}
+	base, err := newWorkspaceEditFileTool(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invokable := base.(tool.InvokableTool)
+	_, err = invokable.InvokableRun(context.Background(), `{
+		"file_path":"chapters/ch01.md",
+		"edits":[{"start_line":2,"new_string":"replacement"}]
+	}`)
+	if err == nil || !strings.Contains(err.Error(), "file_revision") {
+		t.Fatalf("line edit without read revision should fail, got %v", err)
+	}
+	if service.readCalls != 0 || service.applyCalls != 0 {
+		t.Fatalf("missing line revision should fail before workspace access: %#v", service)
+	}
+
+	_, err = invokable.InvokableRun(context.Background(), `{
+		"file_path":"chapters/ch01.md",
+		"file_revision":"sha256:read-snapshot",
+		"edits":[{"start_line":2,"end_line":3,"new_string":"replacement"}]
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if service.readCalls != 0 || service.applyRequest.BaseRevision != "sha256:read-snapshot" {
+		t.Fatalf("line edit did not forward read revision atomically: %#v", service.applyRequest)
 	}
 }
 

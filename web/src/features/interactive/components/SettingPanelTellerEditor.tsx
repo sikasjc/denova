@@ -11,6 +11,7 @@ import { MessageList } from '@/components/Chat/MessageList'
 import { AutosaveStatusIndicator } from '@/components/forms/autosave-status'
 import { agentViewContent, buildAgentMessageViews } from '@/lib/agent-message-view'
 import { normalizeAgentUIMessages, type AgentUIMessage } from '@/lib/agent-ui'
+import { takeCodePointPrefix } from '@/lib/bounded-text'
 import { createAgentDataMessage, createAgentTextMessage } from '@/hooks/useAgentUIMessageStream'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -830,7 +831,7 @@ function stringifyToolInput(input: unknown) {
 }
 
 function limitStyleSource(value: string) {
-  return Array.from(value).slice(0, STYLE_SOURCE_LIMIT).join('')
+  return takeCodePointPrefix(value, STYLE_SOURCE_LIMIT).text
 }
 
 function contentPreview(value: string) {

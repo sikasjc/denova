@@ -3,6 +3,7 @@ import { EditorState } from '@tiptap/pm/state'
 import type { Editor } from '@tiptap/react'
 import { diffChars } from 'diff'
 import type { DocumentReviewAnchor, DocumentReviewAnchorKind } from '@/features/document-review/types'
+import { takeCodePointPrefix, takeCodePointSuffix } from '@/lib/bounded-text'
 
 export interface EditorReviewRange {
   from: number
@@ -269,9 +270,9 @@ function utf8Bytes(value: string): number {
 }
 
 function boundedPrefix(value: string): string {
-  return Array.from(value).slice(0, 128).join('')
+  return takeCodePointPrefix(value, 128).text
 }
 
 function boundedSuffix(value: string): string {
-  return Array.from(value).slice(-128).join('')
+  return takeCodePointSuffix(value, 128).text
 }

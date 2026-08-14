@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -43,6 +44,39 @@ func TestWorkspaceReadFileToolReturnsPartialWindowWithFullFileRevision(t *testin
 	}
 	if !strings.Contains(body, "     2\tsecond") || strings.Contains(body, "first") || strings.Contains(body, "third") {
 		t.Fatalf("partial cat-n selection mismatch: %q", body)
+	}
+}
+
+func TestWorkspaceReadFileToolReturnsOnlyRealStableLineNumbers(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{name: "LF", content: "first\nsecond\n", want: "     1\tfirst\n     2\tsecond"},
+		{name: "CRLF", content: "first\r\nsecond\r\n", want: "     1\tfirst\n     2\tsecond"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := writeTempFile(t, test.content)
+			base, err := newWorkspaceReadFileTool(newTestAgentFilesystemBackend(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := base.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"`+path+`"}`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, body, ok := strings.Cut(result, "\n")
+			if !ok {
+				t.Fatalf("read result has no metadata line: %q", result)
+			}
+			if body != test.want {
+				t.Fatalf("line-numbered body = %q", body)
+			}
+			if strings.Contains(body, "     3\t") {
+				t.Fatalf("trailing newline created a non-existent source line: %q", body)
+			}
+		})
 	}
 }
 
@@ -127,6 +161,70 @@ func TestWorkspaceEditFileUsesCurrentRevisionWithoutReadDependency(t *testing.T)
 	}
 	if string(content) != "agent update" {
 		t.Fatalf("edit_file did not apply against its current snapshot: %q", content)
+	}
+}
+
+func TestWorkspaceReadThenEditByLineUsesRevisionGuard(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "ideas.md")
+	const original = "first\nsecond\nthird\n"
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service, err := workspacechange.NewService(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readTool, err := newWorkspaceReadFileTool(newTestAgentFilesystemBackend(t, workspace), workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readResult, err := readTool.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"`+path+`"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadataLine, body, ok := strings.Cut(readResult, "\n")
+	if !ok {
+		t.Fatalf("read result has no metadata: %q", readResult)
+	}
+	var metadata workspaceReadFileMetadata
+	if err := json.Unmarshal([]byte(metadataLine), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Revision == "" || !strings.Contains(body, "     2\tsecond") {
+		t.Fatalf("read result cannot safely drive a line edit: metadata=%#v body=%q", metadata, body)
+	}
+	editTool, err := newWorkspaceEditFileTool(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lineEdit := fmt.Sprintf(`{
+		"file_path":"ideas.md",
+		"file_revision":%q,
+		"edits":[{"start_line":2,"new_string":"SECOND"}]
+	}`, metadata.Revision)
+	if _, err := editTool.(tool.InvokableTool).InvokableRun(context.Background(), lineEdit); err != nil {
+		t.Fatal(err)
+	}
+	if content, err := os.ReadFile(path); err != nil || string(content) != "first\nSECOND\nthird\n" {
+		t.Fatalf("line edit result = %q err=%v", content, err)
+	}
+
+	staleRevision := workspacechange.Revision([]byte("first\nSECOND\nthird\n"))
+	const external = "inserted\nfirst\nSECOND\nthird\n"
+	if err := os.WriteFile(path, []byte(external), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	staleEdit := fmt.Sprintf(`{
+		"file_path":"ideas.md",
+		"file_revision":%q,
+		"edits":[{"start_line":2,"new_string":"WRONG TARGET"}]
+	}`, staleRevision)
+	if _, err := editTool.(tool.InvokableTool).InvokableRun(context.Background(), staleEdit); err == nil {
+		t.Fatal("stale line numbers should be rejected")
+	}
+	if content, err := os.ReadFile(path); err != nil || string(content) != external {
+		t.Fatalf("stale line edit changed workspace: %q err=%v", content, err)
 	}
 }
 

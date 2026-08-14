@@ -24,6 +24,7 @@ import { Tool, ToolContent } from '@/components/ai-elements/tool'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { StreamingContentStage } from './StreamingContentStage'
 import { splitMarkdownBlocks } from '@/lib/streaming/markdown-blocks'
+import { hasNonWhitespace, takeTrimmedCodePointPrefix } from '@/lib/bounded-text'
 
 interface MessageItemProps {
   message: ChatMessage
@@ -497,7 +498,7 @@ function SubAgentOutputWindow({
   const name = message.agent_name || message.subagent_type || t('chat.subagent.label')
   const modelLabel = modelDisplayLabel(message)
   const preview = buildMarkdownPreview(content, 220)
-  const hasContent = Boolean(content.trim())
+  const hasContent = hasNonWhitespace(content)
   const statusLabel = message.streaming ? t('chat.subagent.status.streaming') : t('chat.subagent.status.done')
   const detailMode = Boolean(onOpen)
   const actionLabel = detailMode ? t('chat.subagent.openSession') : (expanded ? t('chat.subagent.collapse') : t('chat.subagent.expand'))
@@ -1539,10 +1540,9 @@ function buildPreview(content: string, maxLength: number) {
 }
 
 function buildMarkdownPreview(content: string, maxLength: number) {
-  const trimmed = content.trim()
-  const chars = Array.from(trimmed)
-  if (chars.length <= maxLength) return trimmed
-  return `${chars.slice(0, maxLength).join('').trimEnd()}\n\n...`
+  const preview = takeTrimmedCodePointPrefix(content, maxLength)
+  if (!preview.truncated) return preview.text
+  return `${preview.text}\n\n...`
 }
 
 /** 判断是否为会产生大量内容参数的工具（适合流式预览） */
