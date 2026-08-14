@@ -27,6 +27,8 @@ type IDEStoryTeller struct {
 	ImagePresetSystemPrompt string
 }
 
+const ideFlowSource = "Denova built-in + setting/" + book.OutlineFormatFileName + " + setting/" + book.ChapterGroupFormatFileName
+
 // ConfigManagerResourceSkill is a bounded, already-resolved Skill body that
 // config_manager should treat as run-scoped schema/workflow guidance.
 type ConfigManagerResourceSkill struct {
@@ -202,6 +204,7 @@ func buildIDEBuiltinInstruction(cfg *config.Config, state *book.State, teller ID
 	creator := ""
 	stateContext := ""
 	workspace := ""
+	outlineFormat, chapterGroupFormat := bookStructureFormats(state)
 	workspace = cfg.Workspace
 	if state != nil {
 		creator = state.ReadCreatorPrompt()
@@ -223,13 +226,23 @@ func buildIDEBuiltinInstruction(cfg *config.Config, state *book.State, teller ID
 		VolumeDirFormat:        cfg.VolumeDirFormat,
 		ChapterGroupMin:        cfg.ChapterGroupMin,
 		ChapterGroupMax:        cfg.ChapterGroupMax,
-		OutlineFormat:          cfg.OutlineFormat,
-		ChapterGroupFormat:     cfg.ChapterGroupFormat,
+		OutlineFormat:          outlineFormat,
+		ChapterGroupFormat:     chapterGroupFormat,
 	})
 	if imagePresetSystem := imagePresetSystemInstruction(teller); imagePresetSystem != "" {
 		builtIn = strings.TrimSpace(builtIn) + "\n\n" + imagePresetSystem
 	}
 	return builtIn, workspace, creator, stateContext
+}
+
+// bookStructureFormats resolves the current book's Agent-editable structure
+// files. Empty values deliberately flow to prompts.structureFormatBlock, which
+// applies the built-in defaults.
+func bookStructureFormats(state *book.State) (outline, chapterGroup string) {
+	if state == nil {
+		return "", ""
+	}
+	return state.OutlineFormatOverride(), state.ChapterGroupFormatOverride()
 }
 
 func imagePresetSystemInstruction(teller IDEStoryTeller) string {
@@ -475,7 +488,7 @@ func BuiltinAgentPromptBlocks(cfg *config.Config, state *book.State, ideTeller I
 	_, interactiveWorkspace, _ := buildInteractiveStoryBuiltinInstruction(promptCfg, state, prompts.InteractiveStorySystemInstructionInput{})
 	configManagerFlow := configManagerFlowInstruction(promptCfg, state)
 	return config.AgentPromptBlockSettings{
-		IDE:                 builtinPromptBlocks(promptCfg, config.AgentKindIDE, ideFlowInstruction(promptCfg, ideWorkspace)),
+		IDE:                 builtinPromptBlocks(promptCfg, config.AgentKindIDE, ideFlowInstruction(promptCfg, state, ideWorkspace)),
 		InteractiveStory:    builtinPromptBlocks(promptCfg, config.AgentKindInteractiveStory, interactiveStoryFlowInstruction(promptCfg, interactiveWorkspace)),
 		ConfigManager:       builtinPromptBlocks(promptCfg, config.AgentKindConfigManager, configManagerFlow),
 		InteractiveDirector: builtinPromptBlocks(promptCfg, config.AgentKindInteractiveDirector, prompts.BuildInteractiveDirectorSystemInstruction()),
@@ -502,7 +515,7 @@ func BuiltinAgentPromptSources(cfg *config.Config, state *book.State, ideTeller 
 		configManagerCreator = state.ReadCreatorPrompt()
 	}
 	return config.AgentPromptSourceSettings{
-		IDE: builtinPromptSourceList(promptCfg, config.AgentKindIDE, ideFlowInstruction(promptCfg, ideWorkspace),
+		IDE: builtinPromptSourceList(promptCfg, config.AgentKindIDE, ideFlowInstruction(promptCfg, state, ideWorkspace),
 			readonlyPromptSource("creator", "CREATOR.md", "CREATOR.md", ideCreator),
 			readonlyPromptSource("teller", "IDE 默认导演规则", ideTeller.ID, ideTeller.Prompt),
 		),
@@ -548,10 +561,14 @@ func builtinPromptSourceList(cfg *config.Config, agentKind, flow string, extraSo
 			sources = append(sources, source)
 		}
 	}
+	flowSource := "Denova built-in"
+	if agentKind == config.AgentKindIDE {
+		flowSource = ideFlowSource
+	}
 	sources = append(sources, config.AgentPromptSource{
 		ID:       "flow",
 		Title:    "流程规则",
-		Source:   "Denova built-in",
+		Source:   flowSource,
 		Content:  editablePromptFlowForAgent(agentKind, flow),
 		Editable: true,
 		Field:    "flow_prompt",
@@ -603,18 +620,19 @@ func styleRulePromptSources(rules []StyleRule) []promptSource {
 	return sources
 }
 
-func ideFlowInstruction(cfg *config.Config, workspace string) string {
+func ideFlowInstruction(cfg *config.Config, state *book.State, workspace string) string {
 	if cfg == nil {
 		cfg = &config.Config{}
 	}
+	outlineFormat, chapterGroupFormat := bookStructureFormats(state)
 	return prompts.BuildIDEWritingFlowInstruction(prompts.SystemInstructionInput{
 		Workspace:             workspace,
 		ChapterFilenameFormat: cfg.ChapterFilenameFormat,
 		VolumeDirFormat:       cfg.VolumeDirFormat,
 		ChapterGroupMin:       cfg.ChapterGroupMin,
 		ChapterGroupMax:       cfg.ChapterGroupMax,
-		OutlineFormat:         cfg.OutlineFormat,
-		ChapterGroupFormat:    cfg.ChapterGroupFormat,
+		OutlineFormat:         outlineFormat,
+		ChapterGroupFormat:    chapterGroupFormat,
 	})
 }
 

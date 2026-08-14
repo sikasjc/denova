@@ -44,4 +44,4 @@ agent: ide
 - 修改只有影响叙事事实或角色状态时才更新 `setting/progress.md` 和 `setting/character-states.md`；只有长期设定发生明确变化时才用 write_lore_items 更新资料库
 - 实质性修改章节时同步检查当前章节组细纲是否还成立；如明显偏离，只提示作者确认是否调整细纲，不要擅自重写长期大纲
 - 不要把已完成章节复盘写进 `setting/outline.md`，也不要把未来章节规划写进资料库
-- 除非作者明确提出重构主线、调整卷章或修改章节目标，不轻易更新 `setting/outline.md`
+- 除非作者明确提出重构主线、调整核心剧情或分卷规划，不轻易更新 `setting/outline.md`（大纲只到卷级，逐章调整属于细纲）

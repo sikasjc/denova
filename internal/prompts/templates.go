@@ -58,3 +58,24 @@ const CreatorTemplate = `# 创作者指令
 - （写下任何你希望 AI 始终遵守的规则）
 - 【特别提醒】[严禁输出与指令无关的内容或规则解释，直接继续生成内容。]
 `
+
+// OutlineFormatFileTemplate 是 setting/outline-format.md 的初始内容：一段说明 +
+// 系统内置的卷级大纲结构。这个文件按书存放，作者或 Agent 可直接编辑来定制本书的大纲结构；
+// 删除或留空则回落系统内置默认。
+const OutlineFormatFileTemplate = `<!--
+  这是本书的「大纲结构模板」。生成或更新 setting/outline.md 时，写作 Agent 会遵循这里定义的结构。
+  只影响本书；留空或删除本文件则使用系统内置默认结构。
+  下面是当前默认结构，可按本书需要增删小节。
+-->
+
+` + defaultOutlineFormat + "\n"
+
+// ChapterGroupFormatFileTemplate 是 setting/chapter-group-format.md 的初始内容：一段说明 +
+// 系统内置的细纲结构。按书存放，作者或 Agent 可直接编辑；删除或留空则回落系统内置默认。
+const ChapterGroupFormatFileTemplate = `<!--
+  这是本书的「细纲结构模板」。生成 setting/chapter-groups/ 下的细纲时，写作 Agent 会遵循这里定义的结构。
+  只影响本书；留空或删除本文件则使用系统内置默认结构。
+  下面是当前默认结构，可按本书需要增删小节。
+-->
+
+` + defaultChapterGroupFormat + "\n"

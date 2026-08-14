@@ -316,6 +316,51 @@ func TestIDEContextAnalysisShowsStyleRulesAsSystemPromptParts(t *testing.T) {
 	}
 }
 
+func TestIDEContextAnalysisUsesPerBookStructureFormatFiles(t *testing.T) {
+	state := book.NewState(t.TempDir())
+	if err := state.InitWorkspace(); err != nil {
+		t.Fatal(err)
+	}
+	const customOutline = "# 上下文分析中的本书大纲结构"
+	const customChapterGroup = "# 上下文分析中的本书细纲结构"
+	if err := os.WriteFile(filepath.Join(state.SettingDir(), book.OutlineFormatFileName), []byte(customOutline), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state.SettingDir(), book.ChapterGroupFormatFileName), []byte(customChapterGroup), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	analysis, err := BuildIDEContextAnalysis(
+		&config.Config{Workspace: state.Workspace()},
+		state,
+		IDEStoryTeller{},
+		nil,
+		nil,
+		0,
+		nil,
+		nil,
+		ChatRequest{Message: "查看上下文"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var flow string
+	for _, part := range analysis.SystemPromptParts {
+		if part.ID == "flow" {
+			if !strings.Contains(part.Source, book.OutlineFormatFileName) || !strings.Contains(part.Source, book.ChapterGroupFormatFileName) {
+				t.Fatalf("context analysis flow source should name both per-book files: %q", part.Source)
+			}
+			flow = part.Content
+			break
+		}
+	}
+	for _, want := range []string{customOutline, customChapterGroup} {
+		if !strings.Contains(flow, want) {
+			t.Fatalf("context analysis flow should match per-book structure %q:\n%s", want, flow)
+		}
+	}
+}
+
 func TestInteractiveContextAnalysisShowsStyleRulesAsSystemPromptParts(t *testing.T) {
 	analysis, err := BuildInteractiveStoryContextAnalysis(
 		&config.Config{},

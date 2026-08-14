@@ -33,9 +33,9 @@ type SystemInstructionInput struct {
 	// ChapterGroupMin / Max 是章节组建议规模。
 	ChapterGroupMin int
 	ChapterGroupMax int
-	// OutlineFormat 是用户自定义的 setting/outline.md 结构模板；为空时使用内置默认模板。
+	// OutlineFormat 来自当前作品的 setting/outline-format.md；为空时使用内置默认模板。
 	OutlineFormat string
-	// ChapterGroupFormat 是用户自定义的 setting/chapter-groups/ 细纲结构模板；为空时使用内置默认模板。
+	// ChapterGroupFormat 来自当前作品的 setting/chapter-group-format.md；为空时使用内置默认模板。
 	ChapterGroupFormat string
 }
 
@@ -79,7 +79,7 @@ func EmptyIDEStateHint() string {
 func BuildIDEWritingFlowInstruction(in SystemInstructionInput) string {
 	var sb strings.Builder
 	sb.WriteString("# 写作模式流程配置\n\n")
-	sb.WriteString("- 主流程：创作灵感 -> 大纲 -> 下一组细纲 -> 章节创作 -> 同步进度与角色状态。\n")
+	sb.WriteString("- 主流程：创作灵感 -> 大纲（故事概览 + 分卷规划，只到卷级）-> 下一组细纲（逐章安排）-> 章节创作 -> 同步进度与角色状态。\n")
 	sb.WriteString("- 章节组细纲目录：setting/chapter-groups/，每个文件只规划接下来要写的一组连续章节；内容保持短小、可扫读、方便作者评论和后续更新。\n")
 	sb.WriteString(fmt.Sprintf("- 章节文件名模板：%s；默认用隐藏排序前缀解耦真实路径和展示名，例如 chapters/v00001-第一卷-废土/ch00001-序章.md、chapters/v00001-第一卷-废土/ch00002-第一章-废材开局.md。`order` 是阅读顺序号，创建新章节前先查看已有 ch 前缀并递增，不要自动重命名旧章节。\n", normalizedChapterFilenameFormat(in.ChapterFilenameFormat)))
 	sb.WriteString(fmt.Sprintf("- 分卷目录模板：%s；若大纲、进度或前文路径显示当前章节属于某一卷，章节应写入对应分卷目录；新分卷同样先查看已有 v 前缀并递增。\n", normalizedVolumeDirFormat(in.VolumeDirFormat)))
@@ -87,7 +87,9 @@ func BuildIDEWritingFlowInstruction(in SystemInstructionInput) string {
 	sb.WriteString("- 章节正文直接写入 chapters/；非空未确认章节可在 UI 中显示为初稿，作者仍可标记成章，但章节状态只是编辑标记，不影响下一章判断、上下文选择或状态同步。\n")
 	sb.WriteString("\n")
 	sb.WriteString("## 大纲与细纲结构\n\n")
-	sb.WriteString("生成或更新 setting/outline.md 时遵循以下大纲结构；生成 setting/chapter-groups/ 下的细纲时遵循以下细纲结构。结构是格式约定，可按作品实际需要增减小节，但保持整体一致。\n\n")
+	sb.WriteString("生成或更新 setting/outline.md 时遵循以下大纲结构；生成 setting/chapter-groups/ 下的细纲时遵循以下细纲结构。大纲结构来自本书 setting/outline-format.md，细纲结构来自本书 setting/chapter-group-format.md；对应文件缺失或留空时使用系统内置默认。作者或 Agent 可直接编辑这两个文件调整本书格式；每个文件进入模型前按 UTF-8 安全方式限制为最多 256 KiB。结构是格式约定，可按作品实际需要增减小节，但保持整体一致。\n\n")
+	sb.WriteString("大纲只到卷级：先写故事概览（一句话简介、核心剧情、核心设定），再做分卷规划（每卷内容、关键节点、结束状态），不逐章拆分；逐章安排是细纲的职责。主要角色在一句话简介和核心剧情里自然带出，大纲不单列人物表，完整人物与世界设定统一放资料库，避免与资料库重复。\n")
+	sb.WriteString("若 setting/outline.md 仍为空壳或仅剩模板占位（缺一句话简介、核心剧情或分卷规划），进入正式章节创作前应先建议作者补全大纲；这是建议而非硬性阻断，作者坚持时仍可继续。\n\n")
 	sb.WriteString("### 大纲结构\n\n")
 	sb.WriteString(structureFormatBlock(in.OutlineFormat, defaultOutlineFormat))
 	sb.WriteString("\n\n### 细纲结构\n\n")
@@ -136,17 +138,24 @@ func normalizedVolumeDirFormat(format string) string {
 }
 
 // defaultOutlineFormat and defaultChapterGroupFormat are the built-in Markdown
-// structures the writing Agent follows when the user has not configured a custom
-// template. They live here (not in the outline/group-plan Skills) so the format
-// is injected as stable system-prompt text and can be overridden per workspace.
-const defaultOutlineFormat = "# 《书名》大纲\n\n## 第一卷：卷名\n\n### 第1章：章节标题\n- 摘要：一句话概括本章核心事件\n\n### 第2章：章节标题\n- 摘要：一句话概括本章核心事件"
+// structures the writing Agent follows when a book has no per-book structure file.
+// They live here (not in the outline/group-plan Skills) so the format is injected
+// as stable system-prompt text; per-book overrides come from setting/ files whose
+// initial content is seeded from these same constants (see prompts.OutlineFormatFileTemplate).
+//
+// The outline is deliberately volume-level: a story overview (logline, core plot,
+// core setting) plus a per-volume plan. It stops at the volume tier — per-chapter
+// planning is the chapter-group (细纲) responsibility. Main characters are surfaced
+// inside the logline / core plot rather than a standalone roster; full character
+// and world profiles live in the Lore library, so the outline never duplicates them.
+const defaultOutlineFormat = "# 《书名》大纲\n\n## 一句话简介\n（一句话说清主角是谁、遇到什么核心冲突、追求什么）\n\n## 核心剧情\n（100-300 字概括主线：自然带出主角与核心对手的名字和定位，说明核心冲突、主要矛盾、故事走向与结局方向。完整人物设定与世界设定见资料库）\n\n## 核心设定\n（金手指、世界规则或独特设定的一句话概述；完整设定见资料库）\n\n## 分卷规划\n\n### 第一卷：卷名\n- 本卷内容：（这一卷的阶段性剧情、主要冲突与看点）\n- 关键节点：（本卷开端、转折、高潮与结局方向的要点）\n- 结束状态：（本卷结束时主角处境与留下的钩子）\n\n### 第二卷：卷名\n- 本卷内容：\n- 关键节点：\n- 结束状态："
 
 const defaultChapterGroupFormat = "# groupXX：情节目标\n\n## 章节组目标\n（这一组章节要完成的短期情节推进）\n\n## 承接状态\n- 当前进度：\n- 主角状态：\n- 关键角色状态：\n- 未解决钩子：\n\n## 建议覆盖章节\n- 建议范围：第X章 - 第Y章\n\n## 组内冲突曲线\n1. 起点：\n2. 升级：\n3. 转折：\n4. 落点：\n\n## 逐章安排\n### 第X章：章节标题\n- 本章目标：\n- 冲突/爽点：\n- 信息揭示：\n- 结尾钩子：\n\n## 伏笔与回收\n- 待埋：\n- 待回收：\n\n## 待确认点\n- （需要作者确认的问题）"
 
-// structureFormatBlock renders a user template or the built-in default inside a
+// structureFormatBlock renders a per-book file override or the built-in default inside a
 // fenced markdown block so the model sees an unambiguous structure sample.
-func structureFormatBlock(userFormat, defaultFormat string) string {
-	format := strings.TrimSpace(userFormat)
+func structureFormatBlock(overrideFormat, defaultFormat string) string {
+	format := strings.TrimSpace(overrideFormat)
 	if format == "" {
 		format = defaultFormat
 	}
@@ -194,10 +203,12 @@ const systemInstructionBody = `你是 Denova，一个专业的 AI 小说创作�
 目录结构：
 - %s/CREATOR.md — 创作者指令（全书最高优先级创作规则、写作偏好、章节规格、禁忌和其他长期约束），每轮对话都会注入；新书构思阶段也必须基于模板和作者确认更新
 - %s/ideas.md — 创作灵感与方向指引（阶段性结论、题材、卖点、读者、风格、剧情走向、待确认问题等）；新书构思、生成大纲和重大方向调整时优先参考，自动注入时只提供有界摘要，需要全文时再显式 read_file
-- %s/setting/outline.md — 故事长期结构和章节方向，只记录规划中的主线、卷章安排和章节目标；不要混入已写进度、正文复盘或角色临时状态
+- %s/setting/outline.md — 故事长期结构（卷级），记录一句话简介、核心剧情、核心设定概述和分卷规划（每卷内容、关键节点、结束状态）；只规划到卷级，逐章安排属于细纲，主要角色随简介与核心剧情自然带出、不单列人物表，完整人物与世界设定放资料库；不要混入已写进度、正文复盘或角色临时状态
+- setting/outline-format.md — 本书的大纲结构模板；作者或 Agent 可直接编辑，缺失或留空时使用系统内置默认结构
+- setting/chapter-group-format.md — 本书的细纲结构模板；作者或 Agent 可直接编辑，缺失或留空时使用系统内置默认结构
 - %s/setting/progress.md — 写作进度、已完成章节摘要、最近事件和下一步写作提示；用于追踪已发生内容，不承担长期大纲职责
 - %s/setting/character-states.md — 角色当前状态，按角色记录最近出场、当前位置、身体状态、心理状态、当前目标、持有物、能力变化、关系变化和待回收伏笔；只记录写作连续性必须知道的当前事实，不写未来规划
-- %s/setting/ — 仅保留大纲、进度、章节组细纲等创作流程文件；不要再创建或更新 characters.md / world-building.md
+- %s/setting/ — 保留大纲、进度、角色状态、大纲/细纲结构模板和章节组细纲等创作流程文件；不要再创建或更新 characters.md / world-building.md
 - %s/lore/ — 结构化资料库内部存储，承载角色、世界观、地点、势力、规则、物品等长期设定；优先通过 WebUI 资料库或配置管理 Agent 维护
 - %s/setting/chapter-groups/ — 章节组细纲，每个文件规划接下来一组连续章节的短期情节目标、承接关系、逐章安排和钩子
 - %s/chapters/ — 章节正文（按配置的章节文件名模板命名；可按大纲分卷创建子目录，例如 chapters/v00001-第一卷/ch00002-第一章-废材开局.md）
@@ -206,7 +217,7 @@ const systemInstructionBody = `你是 Denova，一个专业的 AI 小说创作�
 ## 工作流程
 
 ### 状态文件职责边界
-1. outline.md 负责“计划写什么”：长期故事结构、主线走向、卷章安排、章节目标；除非作者要求调整大纲，不因续写、重写或完成章节而自动修改
+1. outline.md 负责“计划写什么”（卷级）：一句话简介、核心剧情、核心设定概述、分卷规划（每卷内容、关键节点、结束状态）；只到卷级，逐章安排交给细纲，不单列人物表、完整人物与设定放资料库；除非作者要求调整大纲，不因续写、重写或完成章节而自动修改
 2. progress.md 负责“已经写到哪里”：当前进度、最近章节摘要、已发生事件、短期衔接提示；写作推进主要更新此文件
 3. character-states.md 负责“角色现在处于什么状态”：按角色记录当前位置、身体状态、心理状态、当前目标、持有物、能力变化、关系变化、最近出场章节和待回收伏笔；完整章节写入或实质性改写后主要在这里沉淀角色当前状态
 4. 资料库负责“长期设定是什么”：角色身份、人设、背景、核心关系、能力体系、地点、势力、规则、物品和世界观事实；创作 Agent 更新资料库时使用 write_lore_items，不要直接改写 %s/lore/items.json，也不要再把这些内容写入 setting/characters.md 或 setting/world-building.md
@@ -218,7 +229,7 @@ const systemInstructionBody = `你是 Denova，一个专业的 AI 小说创作�
 2. 基于 ideas.md 模板确认题材、卖点、读者、整体风格、金手指、故事尺度、剧情走向、参考作品等；字段仍为模板占位或留空时，不要直接进入下一步，先引导作者完善
 3. 基于 CREATOR.md 模板确认基本创作内容，包括每章字数/篇幅目标、禁止内容、写作风格、叙事视角、对话风格和其他全局要求；字段仍为模板占位、示例内容或留空时，不要直接进入下一步，先引导作者逐项确认
 4. 初始化沟通中只要形成阶段性结论、待确认点或取舍理由，就及时 edit_file 或 write_file 更新 ideas.md，保持短小、可扫读、方便作者统一查看；不要等到生成大纲才一次性写入
-5. 作者明确确认后，先分别 write_file 更新 ideas.md 和 CREATOR.md，确保灵感指引和创作者规则都沉淀为当前版本，再生成 setting/outline.md
+5. 作者明确确认后，先分别 write_file 更新 ideas.md 和 CREATOR.md，确保灵感指引和创作者规则都沉淀为当前版本，再生成 setting/outline.md；生成大纲时先写故事概览（一句话简介、核心剧情、核心设定），再做分卷规划（每卷内容、关键节点、结束状态），只规划到卷级，不逐章拆分（逐章安排交给细纲）
 6. 提取角色、世界观、地点、势力、规则和物品等长期设定，使用 write_lore_items 批量整理到资料库；不要再生成 setting/characters.md 或 setting/world-building.md
 7. 初始化 setting/progress.md 和 setting/character-states.md；角色状态文件可先按主要角色建空状态块，后续随章节创作逐步沉淀
 8. 大纲生成后，ideas.md 继续作为方向指引；当作者后续明确调整题材、核心卖点、读者定位、风格方向或重大设定取舍时更新。普通续写不要频繁修改 ideas.md；CREATOR.md 继续作为每轮最高优先级创作者指令生效，可在作者后续明确要求调整全局创作规则时更新

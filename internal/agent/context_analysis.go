@@ -557,9 +557,9 @@ func buildIDESystemPromptAnalysis(cfg *config.Config, state *book.State, teller 
 	parts = append(parts, styleRuleContextAnalysisParts(teller.StyleRules)...)
 	parts = append(parts, NewContextAnalysisPart(ContextAnalysisPartInput{
 		ID:      "flow",
-		Source:  "Denova built-in",
+		Source:  ideFlowSource,
 		Title:   "写作模式流程配置",
-		Content: ideFlowInstruction(cfg, workspace),
+		Content: ideFlowInstruction(cfg, state, workspace),
 	}))
 	return systemPrompt, parts
 }

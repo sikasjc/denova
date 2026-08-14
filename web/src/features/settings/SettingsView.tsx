@@ -432,12 +432,6 @@ export function SettingsView({ onClose }: { onClose?: () => void }) {
           <Num label={t('settings.ide.chapterGroupMax')} value={draft.chapter_group_max ?? null}
                placeholder={placeholderFor('chapter_group_max')}
                onChange={(v) => setField('chapter_group_max', v)} />
-          <TextArea label={t('settings.ide.outlineFormat')} value={draft.outline_format}
-                    placeholder={placeholderFor('outline_format')}
-                    onChange={(v) => setField('outline_format', v)} />
-          <TextArea label={t('settings.ide.chapterGroupFormat')} value={draft.chapter_group_format}
-                    placeholder={placeholderFor('chapter_group_format')}
-                    onChange={(v) => setField('chapter_group_format', v)} />
           <TellerSelect
             label={t('settings.ide.defaultTeller')}
             value={draft.ide_story_teller_id}
@@ -977,23 +971,6 @@ function Text({ label, value, placeholder, type = 'text', disabled, onChange }: 
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         className={`${fieldCls} disabled:opacity-50`}
-      />
-    </FieldRow>
-  )
-}
-
-function TextArea({ label, value, placeholder, rows = 8, onChange }: {
-  label: string; value?: string; placeholder?: string; rows?: number
-  onChange: (v: string) => void
-}) {
-  return (
-    <FieldRow label={label}>
-      <textarea
-        value={value ?? ''}
-        placeholder={placeholder}
-        rows={rows}
-        onChange={(e) => onChange(e.target.value)}
-        className={`${fieldCls} resize-y whitespace-pre font-mono text-xs leading-relaxed`}
       />
     </FieldRow>
   )

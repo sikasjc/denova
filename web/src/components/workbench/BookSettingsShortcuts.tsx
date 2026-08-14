@@ -12,9 +12,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { flattenFileTree } from './workbench-utils'
 
 const STORAGE_PREFIX = 'nova.outline.pinned-settings:'
-const PINNED_STORAGE_VERSION = 2
+const PINNED_STORAGE_VERSION = 3
 const LEGACY_DEFAULT_PINNED_PATHS = ['setting/outline.md', 'CREATOR.md', 'setting/progress.md']
-const DEFAULT_PINNED_PATHS = [...LEGACY_DEFAULT_PINNED_PATHS, 'ideas.md', 'setting/character-states.md']
+const PREVIOUS_DEFAULT_PINNED_PATHS = [...LEGACY_DEFAULT_PINNED_PATHS, 'ideas.md', 'setting/character-states.md']
+const DEFAULT_PINNED_PATHS = [...PREVIOUS_DEFAULT_PINNED_PATHS, 'setting/outline-format.md', 'setting/chapter-group-format.md']
 
 interface BookSettingItem {
   path: string
@@ -220,6 +221,8 @@ function discoverBookSettings({ tree, outline, ideas, chapterPlans, t }: {
     ['setting/progress.md', { path: 'setting/progress.md', title: t('planning.writingProgressTab'), exists: existingPaths.has('setting/progress.md') }],
     [ideasPath, { path: ideasPath, title: t('planning.ideas'), exists: Boolean(ideas) || existingPaths.has(ideasPath) }],
     ['setting/character-states.md', { path: 'setting/character-states.md', title: t('planning.characterStates'), exists: existingPaths.has('setting/character-states.md') }],
+    ['setting/outline-format.md', { path: 'setting/outline-format.md', title: t('planning.outlineFormatTab'), exists: existingPaths.has('setting/outline-format.md') }],
+    ['setting/chapter-group-format.md', { path: 'setting/chapter-group-format.md', title: t('planning.chapterGroupFormatTab'), exists: existingPaths.has('setting/chapter-group-format.md') }],
   ])
   const chapterPlanPaths = new Set(chapterPlans.map((plan) => plan.path))
   for (const path of paths) {
@@ -252,8 +255,11 @@ function readPinnedPaths(workspace: string) {
     if (parsed?.version === PINNED_STORAGE_VERSION && Array.isArray(parsed.paths) && parsed.paths.every((item: unknown) => typeof item === 'string')) {
       return parsed.paths
     }
-    if (Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')) {
-      return samePaths(parsed, LEGACY_DEFAULT_PINNED_PATHS) ? DEFAULT_PINNED_PATHS : parsed
+    if (parsed?.version === 2 && Array.isArray(parsed.paths) && parsed.paths.every((item: unknown) => typeof item === 'string')) {
+      return samePaths(parsed.paths, PREVIOUS_DEFAULT_PINNED_PATHS) ? DEFAULT_PINNED_PATHS : parsed.paths
+    }
+    if (Array.isArray(parsed) && parsed.every((item: unknown) => typeof item === 'string')) {
+      return samePaths(parsed, LEGACY_DEFAULT_PINNED_PATHS) || samePaths(parsed, PREVIOUS_DEFAULT_PINNED_PATHS) ? DEFAULT_PINNED_PATHS : parsed
     }
     return DEFAULT_PINNED_PATHS
   } catch {

@@ -6,7 +6,7 @@ import { BookSettingsShortcuts } from './BookSettingsShortcuts'
 describe('BookSettingsShortcuts', () => {
   beforeEach(() => window.localStorage.clear())
 
-  it('默认 Pin 五个自适应快捷入口，并可 Pin 动态发现的 Markdown 文件', async () => {
+  it('默认 Pin 七个自适应快捷入口，并可 Pin 动态发现的 Markdown 文件', async () => {
     const user = userEvent.setup()
     render(
       <BookSettingsShortcuts
@@ -16,6 +16,8 @@ describe('BookSettingsShortcuts', () => {
           { name: 'setting', type: 'dir', children: [
             { name: 'outline.md', type: 'file' },
             { name: 'progress.md', type: 'file' },
+            { name: 'outline-format.md', type: 'file' },
+            { name: 'chapter-group-format.md', type: 'file' },
             { name: '人物关系.md', type: 'file' },
           ] },
           { name: 'chapters', type: 'dir', children: [{ name: 'ch01.md', type: 'file' }] },
@@ -32,6 +34,8 @@ describe('BookSettingsShortcuts', () => {
     expect(screen.getByRole('button', { name: '进度' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^灵感尚未创建/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^状态尚未创建/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '大纲结构' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '细纲结构' })).toBeInTheDocument()
     expect(screen.getByTestId('book-setting-shortcuts')).toHaveClass('grid-cols-[repeat(auto-fill,minmax(4rem,1fr))]')
     expect(screen.queryByRole('button', { name: '人物关系' })).not.toBeInTheDocument()
 
@@ -60,12 +64,33 @@ describe('BookSettingsShortcuts', () => {
     expect(screen.getAllByRole('button').filter((button) => ['灵感', '规则'].includes(button.textContent || '')).map((button) => button.textContent)).toEqual(['灵感', '规则'])
   })
 
-  it('把旧版未自定义的默认三项迁移为新的默认五项', () => {
+  it('把旧版未自定义的默认三项迁移为新的默认七项', () => {
     window.localStorage.setItem('nova.outline.pinned-settings:/books/demo', JSON.stringify(['setting/outline.md', 'CREATOR.md', 'setting/progress.md']))
     render(<BookSettingsShortcuts workspace="/books/demo" tree={[]} chapterPlans={[]} selectedFile={null} onSelectFile={vi.fn()} />)
 
     expect(screen.getByRole('button', { name: /^灵感尚未创建/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^状态尚未创建/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^大纲结构尚未创建/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^细纲结构尚未创建/ })).toBeInTheDocument()
+  })
+
+  it('把版本 2 的默认五项迁移为新的默认七项，但保留自定义 Pin', () => {
+    window.localStorage.setItem('nova.outline.pinned-settings:/books/defaults', JSON.stringify({
+      version: 2,
+      paths: ['setting/outline.md', 'CREATOR.md', 'setting/progress.md', 'ideas.md', 'setting/character-states.md'],
+    }))
+    const { unmount } = render(<BookSettingsShortcuts workspace="/books/defaults" tree={[]} chapterPlans={[]} selectedFile={null} onSelectFile={vi.fn()} />)
+    expect(screen.getByRole('button', { name: /^大纲结构尚未创建/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^细纲结构尚未创建/ })).toBeInTheDocument()
+    unmount()
+
+    window.localStorage.setItem('nova.outline.pinned-settings:/books/custom', JSON.stringify({
+      version: 2,
+      paths: ['ideas.md', 'CREATOR.md'],
+    }))
+    render(<BookSettingsShortcuts workspace="/books/custom" tree={[]} chapterPlans={[]} selectedFile={null} onSelectFile={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /^大纲结构尚未创建/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^细纲结构尚未创建/ })).not.toBeInTheDocument()
   })
 
   it('缺失的设定文件不打开空 Tab，并提示通过创作 Agent 创建', async () => {

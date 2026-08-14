@@ -27,6 +27,8 @@ const planning = {
   'planning.writingProgress': '写作进度',
   'planning.writingProgressTab': '进度',
   'planning.characterStates': '状态',
+  'planning.outlineFormatTab': '大纲结构',
+  'planning.chapterGroupFormatTab': '细纲结构',
   'planning.chapterPlans': '章节组细纲',
   'planning.chapterPlanCount': '{{count}} 组',
   'planning.chapterPlanHistory': '历史章节组',

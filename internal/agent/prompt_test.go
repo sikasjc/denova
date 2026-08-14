@@ -72,6 +72,54 @@ func TestBuildInstructionKeepsWorkspaceStateOutOfSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestBuildInstructionUsesPerBookStructureFormatFiles(t *testing.T) {
+	state := book.NewState(t.TempDir())
+	if err := state.InitWorkspace(); err != nil {
+		t.Fatalf("InitWorkspace failed: %v", err)
+	}
+	const customOutline = "# 本书专属大纲结构\n\n## 三幕分卷"
+	const customChapterGroup = "# 本书专属细纲结构\n\n## 场景节拍"
+	if err := os.WriteFile(filepath.Join(state.SettingDir(), book.OutlineFormatFileName), []byte(customOutline), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state.SettingDir(), book.ChapterGroupFormatFileName), []byte(customChapterGroup), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{Workspace: state.Workspace()}
+
+	instruction := BuildInstruction(cfg, state, IDEStoryTeller{})
+	for _, want := range []string{customOutline, customChapterGroup} {
+		if !strings.Contains(instruction, want) {
+			t.Fatalf("runtime system prompt should include per-book structure %q:\n%s", want, instruction)
+		}
+	}
+	if strings.Contains(instruction, "## 分卷规划") {
+		t.Fatal("per-book outline structure must replace the built-in default in the runtime prompt")
+	}
+
+	blocks := BuiltinAgentPromptBlocks(cfg, state, IDEStoryTeller{})
+	for _, want := range []string{customOutline, customChapterGroup} {
+		if !strings.Contains(blocks.IDE.EditableSystemPrompt, want) {
+			t.Fatalf("Agents-page flow preview should match runtime structure %q:\n%s", want, blocks.IDE.EditableSystemPrompt)
+		}
+	}
+	sources := BuiltinAgentPromptSources(cfg, state, IDEStoryTeller{})
+	flowSource := findPromptSource(sources.IDE.Sources, "flow")
+	if flowSource == nil || !strings.Contains(flowSource.Source, book.OutlineFormatFileName) || !strings.Contains(flowSource.Source, book.ChapterGroupFormatFileName) {
+		t.Fatalf("Agents-page flow source should name both per-book files: %#v", flowSource)
+	}
+}
+
+func TestBuildInstructionFallsBackToBuiltInStructuresWithoutFiles(t *testing.T) {
+	state := book.NewState(t.TempDir()) // Deliberately do not InitWorkspace.
+	instruction := BuildInstruction(&config.Config{Workspace: state.Workspace()}, state, IDEStoryTeller{})
+	for _, want := range []string{"## 一句话简介", "## 分卷规划", "## 章节组目标", "## 逐章安排"} {
+		if !strings.Contains(instruction, want) {
+			t.Fatalf("missing per-book file should fall back to built-in structure marker %q", want)
+		}
+	}
+}
+
 func TestIDEContextRuntimeContextIsBoundedPathOnlyState(t *testing.T) {
 	longName := strings.Repeat("长", ideContextMaxPathRunes+8) + ".md"
 	context := IDEContextRuntimeContext(IDEContextRef{

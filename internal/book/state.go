@@ -102,6 +102,9 @@ func (s *State) InitWorkspace() error {
 	if err := ensureCreatorTemplate(s.workspace); err != nil {
 		return err
 	}
+	if err := s.ensureStructureFormatFiles(); err != nil {
+		return err
+	}
 	if err := NewLoreStore(s.workspace).Ensure(); err != nil {
 		return fmt.Errorf("初始化资料库失败: %w", err)
 	}

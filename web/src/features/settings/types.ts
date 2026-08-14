@@ -28,8 +28,6 @@ export interface Settings {
   hide_novel_chapter_body_in_live_output?: boolean | null
   chapter_filename_format?: string
   volume_dir_format?: string
-  outline_format?: string
-  chapter_group_format?: string
   max_open_tabs?: number | null
   chapter_group_min?: number | null
   chapter_group_max?: number | null

@@ -57,11 +57,6 @@ type Settings struct {
 	HideChapterBodyLiveOutput   *bool  `toml:"hide_novel_chapter_body_in_live_output,omitempty" json:"hide_novel_chapter_body_in_live_output,omitempty"`
 	ChapterFilenameFormat       string `toml:"chapter_filename_format,omitempty" json:"chapter_filename_format,omitempty"`
 	VolumeDirFormat             string `toml:"volume_dir_format,omitempty" json:"volume_dir_format,omitempty"`
-	// OutlineFormat and ChapterGroupFormat let a user override the Markdown
-	// structure the writing Agent uses for setting/outline.md and each
-	// setting/chapter-groups/ file. Empty means the built-in default template.
-	OutlineFormat               string `toml:"outline_format,omitempty" json:"outline_format,omitempty"`
-	ChapterGroupFormat          string `toml:"chapter_group_format,omitempty" json:"chapter_group_format,omitempty"`
 	MaxOpenTabs                 *int   `toml:"max_open_tabs,omitempty" json:"max_open_tabs,omitempty"`
 	ChapterGroupMin             *int   `toml:"chapter_group_min,omitempty" json:"chapter_group_min,omitempty"`
 	ChapterGroupMax             *int   `toml:"chapter_group_max,omitempty" json:"chapter_group_max,omitempty"`
@@ -261,12 +256,6 @@ func Merge(parent, child Settings) Settings {
 	}
 	if child.VolumeDirFormat != "" {
 		out.VolumeDirFormat = child.VolumeDirFormat
-	}
-	if child.OutlineFormat != "" {
-		out.OutlineFormat = child.OutlineFormat
-	}
-	if child.ChapterGroupFormat != "" {
-		out.ChapterGroupFormat = child.ChapterGroupFormat
 	}
 	if child.MaxOpenTabs != nil {
 		out.MaxOpenTabs = child.MaxOpenTabs
@@ -628,6 +617,7 @@ func PrepareWorkspaceAgentSettingsForWrite(existing, incoming Settings) Settings
 
 // workspaceAgentSettings defines the narrow workspace configuration boundary.
 // Model selection and every setting shown on the Settings page are user-scoped.
+// Per-book outline/chapter-group structures live in workspace setting/*.md files.
 func workspaceAgentSettings(settings Settings) Settings {
 	return Settings{
 		AgentTools:       settings.AgentTools,
@@ -662,8 +652,6 @@ func sanitizeEditableSettings(s Settings) Settings {
 	s.DefaultImageAPIProfileID = strings.TrimSpace(s.DefaultImageAPIProfileID)
 	s.AgentIdleTimeoutSeconds = normalizeAgentIdleTimeoutSeconds(s.AgentIdleTimeoutSeconds)
 	s.AgentToolResultLimitKB = normalizeAgentToolResultLimitKB(s.AgentToolResultLimitKB)
-	s.OutlineFormat = normalizeStructureFormat(s.OutlineFormat)
-	s.ChapterGroupFormat = normalizeStructureFormat(s.ChapterGroupFormat)
 	s.ChatResidentMessageLimit = normalizeChatResidentMessageLimit(s.ChatResidentMessageLimit)
 	s.ModelProfiles = sanitizeModelProfiles(s.ModelProfiles)
 	s.ImageAPIProfiles = sanitizeImageAPIProfiles(s.ImageAPIProfiles)
@@ -695,20 +683,6 @@ func normalizeAgentIdleTimeoutSeconds(seconds *int) *int {
 		return nil
 	}
 	return seconds
-}
-
-// MaxStructureFormatRunes bounds a user-provided outline/chapter-group format
-// template. The template is injected into the writing system prompt every turn,
-// so it must have a hard cap; anything longer is truncated on save.
-const MaxStructureFormatRunes = 8000
-
-func normalizeStructureFormat(format string) string {
-	format = strings.TrimSpace(format)
-	runes := []rune(format)
-	if len(runes) <= MaxStructureFormatRunes {
-		return format
-	}
-	return strings.TrimSpace(string(runes[:MaxStructureFormatRunes]))
 }
 
 func normalizeAgentToolResultLimitKB(limit *int) *int {

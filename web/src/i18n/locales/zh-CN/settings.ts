@@ -86,8 +86,6 @@ const settings = {
   'settings.ide.volumeDirFormat': '分卷目录模板',
   'settings.ide.chapterGroupMax': '章节组最多章节',
   'settings.ide.chapterGroupMin': '章节组最少章节',
-  'settings.ide.outlineFormat': '大纲结构模板',
-  'settings.ide.chapterGroupFormat': '细纲结构模板',
   'settings.ide.defaultTeller': '默认叙事',
   'settings.ide.hideNovelChapterBodyInLiveOutput': '隐藏章节正文在 Agent 流中的输出',
   'settings.ide.hideNovelChapterBodyInLiveOutputHelp': '开启后，章节正文不在 Agent 流中输出；文件仍正常写入。',

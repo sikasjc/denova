@@ -206,9 +206,6 @@ chapter_filename_format = "ch{order:05}-{chapter}-{title}.md"
 volume_dir_format = "v{order:05}-{volume}"
 chapter_group_min = 3
 chapter_group_max = 8
-# 大纲与细纲结构模板（留空使用系统内置默认结构，可写多行 Markdown 自定义；最长约 8000 字）。
-# outline_format = ""
-# chapter_group_format = ""
 version_timed_enabled = true
 version_timed_interval_minutes = 10
 
