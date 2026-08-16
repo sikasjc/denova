@@ -53,12 +53,15 @@ type WorkspaceStore = {
   rightPanel: RightPanel
   bottomPanel: BottomPanel
   commandOpen: boolean
+  /** 思考过程块默认是否展开，来自服务端生效配置（默认 false 收起）。 */
+  chatThinkingExpandedDefault: boolean
   setMode: (mode: WorkspaceMode) => void
   setSelectedProjectId: (id?: string) => void
   setSelectedChapterId: (id?: string) => void
   setRightPanel: (panel: RightPanel) => void
   setBottomPanel: (panel: BottomPanel) => void
   setCommandOpen: (open: boolean) => void
+  setChatThinkingExpandedDefault: (expanded: boolean) => void
 }
 
 /** 工作区 UI 状态 Store，仅保存本地界面状态，不存放服务端数据。 */
@@ -69,6 +72,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
   rightPanel: readInitialRightPanel(),
   bottomPanel: null,
   commandOpen: false,
+  chatThinkingExpandedDefault: false,
   setMode: (mode) => {
     persistMode(mode)
     set({ mode })
@@ -81,4 +85,5 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
   },
   setBottomPanel: (panel) => set({ bottomPanel: panel }),
   setCommandOpen: (open) => set({ commandOpen: open }),
+  setChatThinkingExpandedDefault: (expanded) => set({ chatThinkingExpandedDefault: expanded }),
 }))

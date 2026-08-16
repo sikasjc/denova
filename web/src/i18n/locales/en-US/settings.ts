@@ -54,6 +54,7 @@ const settings = {
   'settings.appearance.uiFont': 'UI Font',
   'settings.appearance.uiFontSize': 'UI Font Size (px)',
   'settings.appearance.motionIntensity': 'Motion Intensity',
+  'settings.appearance.chatThinkingExpandedDefault': 'Expand Thinking by Default',
   'settings.font.appleSystem': 'Apple / PingFang',
   'settings.font.humanistSans': 'Humanist Sans',
   'settings.font.lxgwWenkai': 'LXGW WenKai',

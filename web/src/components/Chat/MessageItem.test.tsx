@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { MessageItem } from './MessageItem'
+import { useWorkspaceStore } from '@/stores/workspace-store'
 
 function mockScrollMetrics(element: HTMLElement, initial = { scrollHeight: 520, clientHeight: 128, scrollTop: 0 }) {
   let scrollHeight = initial.scrollHeight
@@ -300,8 +301,23 @@ describe('MessageItem', () => {
     expect(handleSwitch).toHaveBeenCalledWith(expect.objectContaining({ turn_id: 'turn-1' }), 1)
   })
 
-  it('思考过程流式时默认展开，结束后默认折叠但可手动展开', async () => {
+  it('思考过程默认收起（默认配置），可手动展开', async () => {
     const user = userEvent.setup()
+    const { rerender } = render(<MessageItem message={{ role: 'thinking', content: '正在分析', streaming: true }} />)
+
+    // 默认配置（chatThinkingExpandedDefault=false）：流式期间也保持收起
+    expect(screen.queryByText('正在分析')).not.toBeInTheDocument()
+
+    rerender(<MessageItem message={{ role: 'thinking', content: '已经分析完', streaming: false }} />)
+    expect(screen.queryByText('已经分析完')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /思考过程/ }))
+    expect(screen.getByText('已经分析完')).toBeInTheDocument()
+  })
+
+  it('开启「默认展开思考过程」后，流式时自动展开、结束后自动收起', async () => {
+    const user = userEvent.setup()
+    useWorkspaceStore.setState({ chatThinkingExpandedDefault: true })
     const { rerender } = render(<MessageItem message={{ role: 'thinking', content: '正在分析', streaming: true }} />)
 
     expect(screen.getByText('正在分析')).toBeInTheDocument()
@@ -311,15 +327,19 @@ describe('MessageItem', () => {
 
     await user.click(screen.getByRole('button', { name: /思考过程/ }))
     expect(screen.getByText('已经分析完')).toBeInTheDocument()
+    useWorkspaceStore.setState({ chatThinkingExpandedDefault: false })
   })
 
   it('直接增长的流式 thinking 立即复用单棵文本树显示最新内容', () => {
+    // 该用例验证文本树复用而非展开行为，开启默认展开使内容可见
+    useWorkspaceStore.setState({ chatThinkingExpandedDefault: true })
     const { container, rerender } = render(<MessageItem message={{ role: 'thinking', content: '正在分析', streaming: true }} />)
 
     rerender(<MessageItem message={{ role: 'thinking', content: '正在分析下一条线索', streaming: true }} />)
 
     expect(container.querySelector('.nova-streaming-content-stage')).toBeNull()
     expect(screen.getByText('正在分析下一条线索')).toBeInTheDocument()
+    useWorkspaceStore.setState({ chatThinkingExpandedDefault: false })
   })
 
   it('工具调用卡片展示工具名、摘要和成功结果', () => {

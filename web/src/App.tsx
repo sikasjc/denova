@@ -261,6 +261,7 @@ function App() {
           setConfiguredLocale(effective?.language)
           setTheme(normalizeAppTheme(effective?.theme))
           setMotionIntensity(normalizeMotionIntensity(effective?.motion_intensity))
+          useWorkspaceStore.getState().setChatThinkingExpandedDefault(effective?.chat_thinking_expanded_default === true)
           applyFontSettings(fontSettingsFromEffective(effective))
         })
         .catch((e) => console.warn('加载界面配置失败', e))

@@ -214,6 +214,9 @@ export function SettingsView({ onClose }: { onClose?: () => void }) {
           <MotionIntensitySelect label={t('settings.appearance.motionIntensity')} value={draft.motion_intensity}
                                  effective={effective.motion_intensity}
                                  onChange={(v) => setField('motion_intensity', v)} />
+          <BoolTri label={t('settings.appearance.chatThinkingExpandedDefault')} value={draft.chat_thinking_expanded_default ?? null}
+                   effective={effective.chat_thinking_expanded_default}
+                   onChange={(v) => setField('chat_thinking_expanded_default', v)} />
           <FontSelect label={t('settings.appearance.uiFont')} value={draft.ui_font_family}
                       effective={effective.ui_font_family}
                       onChange={(v) => setField('ui_font_family', v)} />

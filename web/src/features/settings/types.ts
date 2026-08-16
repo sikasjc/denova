@@ -41,6 +41,7 @@ export interface Settings {
   theme?: string
   motion_intensity?: string
   update_check_enabled?: boolean | null
+  chat_thinking_expanded_default?: boolean | null
   max_iteration?: number | null
   model_max_retries?: number | null
   agent_idle_timeout_seconds?: number | null

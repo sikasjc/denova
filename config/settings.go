@@ -72,6 +72,10 @@ type Settings struct {
 	Theme              string `toml:"theme,omitempty" json:"theme,omitempty"`
 	MotionIntensity    string `toml:"motion_intensity,omitempty" json:"motion_intensity,omitempty"`
 	UpdateCheckEnabled *bool  `toml:"update_check_enabled,omitempty" json:"update_check_enabled,omitempty"`
+	// ChatThinkingExpandedDefault 控制聊天区「思考过程」块的默认展开状态：
+	// true = 流式与结束时默认展开；false / 未设置 = 默认收起，用户仍可手动展开。
+	// 用户级配置，写入用户 config.toml，写作与游戏模式共用。
+	ChatThinkingExpandedDefault *bool `toml:"chat_thinking_expanded_default,omitempty" json:"chat_thinking_expanded_default,omitempty"`
 
 	// Agent
 	MaxIteration             *int                  `toml:"max_iteration,omitempty" json:"max_iteration,omitempty"`
@@ -147,6 +151,7 @@ func DefaultSettings() Settings {
 		Theme:                       "dark",
 		MotionIntensity:             "system",
 		UpdateCheckEnabled:          boolPtr(true),
+		ChatThinkingExpandedDefault: boolPtr(false),
 		ModelMaxRetries:             intPtr(5),
 		AgentIdleTimeoutSeconds:     intPtr(DefaultAgentIdleTimeoutSeconds),
 		AgentToolResultLimitKB:      intPtr(DefaultAgentToolResultLimitKB),
@@ -295,6 +300,9 @@ func Merge(parent, child Settings) Settings {
 	}
 	if child.UpdateCheckEnabled != nil {
 		out.UpdateCheckEnabled = child.UpdateCheckEnabled
+	}
+	if child.ChatThinkingExpandedDefault != nil {
+		out.ChatThinkingExpandedDefault = child.ChatThinkingExpandedDefault
 	}
 	if child.MaxIteration != nil {
 		out.MaxIteration = child.MaxIteration

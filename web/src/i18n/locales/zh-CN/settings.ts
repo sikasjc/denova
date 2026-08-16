@@ -54,6 +54,7 @@ const settings = {
   'settings.appearance.uiFont': '界面字体',
   'settings.appearance.uiFontSize': '界面字号 (px)',
   'settings.appearance.motionIntensity': '动效强度',
+  'settings.appearance.chatThinkingExpandedDefault': '默认展开思考过程',
   'settings.font.appleSystem': 'Apple / 苹方',
   'settings.font.humanistSans': '人文无衬线',
   'settings.font.lxgwWenkai': '霞鹜文楷',

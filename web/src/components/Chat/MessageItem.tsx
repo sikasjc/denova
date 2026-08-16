@@ -25,6 +25,7 @@ import { Shimmer } from '@/components/ai-elements/shimmer'
 import { StreamingContentStage } from './StreamingContentStage'
 import { splitMarkdownBlocks } from '@/lib/streaming/markdown-blocks'
 import { hasNonWhitespace, takeTrimmedCodePointPrefix } from '@/lib/bounded-text'
+import { useWorkspaceStore } from '@/stores/workspace-store'
 
 interface MessageItemProps {
   message: ChatMessage
@@ -1738,11 +1739,15 @@ function highlightDialogueText(text: string, enabled: boolean, keyPrefix: string
 /** 思考过程折叠块：默认展开，流式结束后自动折叠。 */
 function ThinkingBlock({ message, content, streaming }: { message: ChatMessage; content: string; streaming: boolean }) {
   const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(true)
+  // 思考过程默认展开状态由用户配置决定（设置 → 外观，默认收起）；
+  // 展开配置下流式期间自动展开，结束后收起；收起配置下全程收起，均不覆盖用户手动操作。
+  // defaultOpen={false} 用于抑制 Reasoning 组件内部「流式开始时自动展开」的行为。
+  const expandedDefault = useWorkspaceStore((state) => state.chatThinkingExpandedDefault)
+  const [expanded, setExpanded] = useState(expandedDefault)
 
   useLayoutEffect(() => {
-    setExpanded(streaming)
-  }, [streaming])
+    if (expandedDefault) setExpanded(streaming)
+  }, [streaming, expandedDefault])
 
   // 流式思考但内容尚未到达时，复用 Shimmer 显示“思考中...”，避免空白折叠块像卡死。
   const showActivityShimmer = streaming && !content.trim()
@@ -1750,7 +1755,8 @@ function ThinkingBlock({ message, content, streaming }: { message: ChatMessage; 
   return (
     <div className="flex justify-start">
       <div className="w-full">
-        <Reasoning isStreaming={streaming} open={expanded} onOpenChange={setExpanded} className="mb-0">
+        <Reasoning isStreaming={streaming} open={expanded} onOpenChange={setExpanded}
+                   defaultOpen={expandedDefault ? undefined : false} className="mb-0">
           <ReasoningTrigger className="flex items-center gap-1 py-1 text-xs text-[var(--nova-text-muted)] hover:text-[var(--nova-text)]">
             {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
             {showActivityShimmer ? (
