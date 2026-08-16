@@ -388,6 +388,9 @@ func buildConfiguredSubAgent(ctx context.Context, cfg *config.Config, parent dee
 		Instruction:   buildSubAgentInstruction(parent, sub),
 		Model:         subChatModel,
 		MaxIterations: configMaxIteration(cfg),
+		// 关闭 eino 默认的 instruction FString 插值：用户 SubAgent 提示词常含
+		// 字面花括号（JSON 示例），SessionValues 存在时会被当模板解析而直接失败。
+		GenModelInput: noFormatGenModelInput,
 		Handlers:      assembly.Handlers,
 		ToolsConfig: adk.ToolsConfig{
 			EmitInternalEvents: true,
