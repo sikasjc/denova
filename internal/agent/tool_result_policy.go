@@ -81,6 +81,10 @@ func ManifestForTool(name string) ToolManifest {
 		} else {
 			manifest.Source = ToolSourceRead
 		}
+	case normalized == "count_words":
+		// 字数统计是纯读操作，与 read_file 同级：并行读门控 + file_read 能力约束。
+		manifest.Source = ToolSourceRead
+		manifest.Capability = config.AgentToolFileRead
 	case isToolWriteLike(normalized):
 		manifest.Source = ToolSourceWrite
 		manifest.Capability = config.AgentToolFileWrite

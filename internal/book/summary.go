@@ -119,7 +119,7 @@ func (s *Service) Summary() (WorkspaceSummary, error) {
 		if relErr != nil {
 			return nil
 		}
-		words := countWritingWords(string(data))
+		words := CountWritingWords(string(data))
 		confirmed := words > 0 && confirmedChapters[filepath.ToSlash(rel)]
 		chapter := ChapterSummary{
 			Path:         filepath.ToSlash(rel),
@@ -166,7 +166,7 @@ func (s *Service) documentPreview(relPath, fallbackTitle string) *DocumentPrevie
 		Path:      relPath,
 		Title:     documentTitle(content, fallbackTitle, relPath),
 		Excerpt:   documentExcerpt(content),
-		Words:     countWritingWords(content),
+		Words:     CountWritingWords(content),
 		UpdatedAt: info.ModTime().UTC().Format(time.RFC3339),
 	}
 }
@@ -526,7 +526,10 @@ func truncateRunes(text string, limit int) string {
 	return string(runes[:limit]) + "…"
 }
 
-func countWritingWords(content string) int {
+// CountWritingWords 是全项目统一的写作字数口径：一个非空白字符记 1 字
+// （中文按字数统计，与前端编辑器选中字数一致）。Agent 工具汇报字数时
+// 必须复用该口径，保证模型输出与界面统计一致。
+func CountWritingWords(content string) int {
 	count := 0
 	for _, ch := range content {
 		if unicode.IsSpace(ch) {

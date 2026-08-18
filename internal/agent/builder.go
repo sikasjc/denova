@@ -95,8 +95,28 @@ func BuildAutomationAgent(ctx context.Context, cfg *config.Config, state *book.S
 		Description:       "AI 自动化任务助手",
 		Instruction:       BuildAutomationInstruction(cfg, state, task),
 		EnableSkills:      true,
-		ExtraToolsFactory: loreToolsFactory(cfg, false),
+		ExtraToolsFactory: automationToolsFactory(cfg),
 	})
+}
+
+// automationToolsFactory 组装自动化 Agent 的工具：资料库只读工具 + 字数统计。
+// count_words 让章节批量审阅任务汇报与界面一致的字数，而不是模型自行估算。
+func automationToolsFactory(cfg *config.Config) func(config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
+	loreFactory := loreToolsFactory(cfg, false)
+	return func(settings config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
+		tools, err := loreFactory(settings)
+		if err != nil {
+			return nil, err
+		}
+		if cfg == nil || strings.TrimSpace(cfg.Workspace) == "" {
+			return tools, nil
+		}
+		countWordsTool, err := newWorkspaceCountWordsTool(cfg.Workspace)
+		if err != nil {
+			return nil, err
+		}
+		return append(tools, countWordsTool), nil
+	}
 }
 
 // BuildImageAgent 构建通用图像 Agent。调用方通过运行时上下文和 Skill 约束具体用途。
@@ -490,8 +510,13 @@ func ideToolsFactory(cfg *config.Config) func(config.ResolvedAgentToolSettings) 
 		if err != nil {
 			return nil, err
 		}
+		countWordsTool, err := newWorkspaceCountWordsTool(cfg.Workspace)
+		if err != nil {
+			return nil, err
+		}
 		tools := append([]tool.BaseTool{}, loreTools...)
 		tools = append(tools, imageTools...)
+		tools = append(tools, countWordsTool)
 		return tools, nil
 	}
 }
