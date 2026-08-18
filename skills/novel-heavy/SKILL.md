@@ -95,6 +95,8 @@ reviewer 必须返回结构化问题，每项包含：
 - `fix_instruction`
 - `keep`
 
+涉及字数的审稿结论（篇幅是否达标、单章/单段字数）必须先调用 `count_words` 取数再下结论，禁止通过阅读正文自行估算字数。
+
 ## Final Gate
 
 - 只有修订稿满足用户要求、Context Plan、canon 约束、风格约束和明显连续性检查时才通过。

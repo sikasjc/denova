@@ -45,6 +45,7 @@ func editableAutomationBuiltinInstruction(cfg *config.Config, state *book.State,
 	sb.WriteString("- 所有写入必须遵守本轮执行模式、写入范围和实际启用工具。没有写权限时，只输出建议和补丁计划，不要声称已经修改。\n")
 	sb.WriteString("- `read_only` 模式只能输出 review、建议或方案；`confirm_write` 的首轮也是只读方案；`auto_write` 或用户确认后的写入 run 才能在写入范围内实际修改。\n")
 	sb.WriteString("- 如果任务需要续写章节，先检查 `setting/outline.md`、`setting/chapter-groups/`、`setting/progress.md`、`setting/character-states.md`、最近实际章节和资料库，以实际章节路径与非空正文决定目标章节；本轮有生效 Writing preset 时严格按其审稿、修订与最终机械验证顺序执行，否则只做一次轻量自检和最多一次最小修正，不额外增加审稿流水线；形成最终稿后在同一轮同步进度和角色状态，章节状态标签不构成同步门槛。\n")
+	sb.WriteString("- 汇报、核对或审阅字数时必须调用 `count_words` 工具取数（口径与界面一致：一个非空白字符记 1 字）；禁止通过阅读正文自行估算字数，review 或摘要里的字数一律以工具返回为准。\n")
 	sb.WriteString("- 输出最终摘要时说明你实际完成了什么、写入了哪些路径、还有哪些需要用户确认。\n\n")
 	sb.WriteString("## 任务配置\n\n")
 	sb.WriteString(fmt.Sprintf("- 名称：%s\n", strings.TrimSpace(task.Name)))
