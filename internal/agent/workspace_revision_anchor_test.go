@@ -114,7 +114,7 @@ func TestEditFileReceiptReportsLineRanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := editTool.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"ideas.md","file_revision":"`+workspacechange.Revision([]byte(original))+`","edits":[{"id":"e1","start_line":2,"new_string":"TWO\nTWO-B"}]}`)
+	result, err := editTool.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"ideas.md","file_revision":"`+workspacechange.Revision([]byte(original))+`","edits":[{"start_line":2,"new_string":"TWO\nTWO-B"}]}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestEditFileReceiptReportsLineRanges(t *testing.T) {
 	if hunk.BeforeStartLine != 2 || hunk.BeforeEndLine != 2 || hunk.AfterStartLine != 2 || hunk.AfterEndLine != 3 {
 		t.Fatalf("receipt hunk line range = %+v", hunk)
 	}
-	if receipt.Edits[0].ID != "e1" || receipt.Edits[0].Replacements != 1 {
+	if receipt.Edits[0].ID == "" || receipt.Edits[0].Replacements != 1 {
 		t.Fatalf("receipt edit identity = %#v", receipt.Edits[0])
 	}
 }

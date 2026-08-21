@@ -39,17 +39,9 @@ type workspaceChangeHunkReceipt struct {
 }
 
 type workspaceChangeToolModelReceipt struct {
-	Schema         string                       `json:"schema"`
-	Status         string                       `json:"status"`
-	Workspace      string                       `json:"workspace"`
-	ChangeGroupID  string                       `json:"change_group_id"`
-	ReviewThreadID string                       `json:"review_thread_id,omitempty"`
-	ChangeSetID    string                       `json:"change_set_id"`
-	Path           string                       `json:"path"`
-	Revision       string                       `json:"revision,omitempty"`
-	ReviewStatus   string                       `json:"review_status"`
-	ApplyState     string                       `json:"apply_state"`
-	Edits          []workspaceChangeEditReceipt `json:"edits,omitempty"`
+	Path     string                       `json:"path"`
+	Revision string                       `json:"revision,omitempty"`
+	Edits    []workspaceChangeEditReceipt `json:"edits,omitempty"`
 }
 
 // workspaceChangeToolResultForModel 将内部 receipt 转成模型可见版本：
@@ -62,17 +54,9 @@ func workspaceChangeToolResultForModel(toolName, content string) string {
 		return content
 	}
 	public, err := json.Marshal(workspaceChangeToolModelReceipt{
-		Schema:         receipt.Schema,
-		Status:         receipt.Status,
-		Workspace:      receipt.Workspace,
-		ChangeGroupID:  receipt.ChangeGroupID,
-		ReviewThreadID: receipt.ReviewThreadID,
-		ChangeSetID:    receipt.ChangeSetID,
-		Path:           receipt.Path,
-		Revision:       receipt.Revision,
-		ReviewStatus:   receipt.ReviewStatus,
-		ApplyState:     receipt.ApplyState,
-		Edits:          receipt.Edits,
+		Path:     receipt.Path,
+		Revision: receipt.Revision,
+		Edits:    receipt.Edits,
 	})
 	if err != nil {
 		return content

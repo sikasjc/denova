@@ -232,7 +232,7 @@ func requireRevision(path, expected, actual string) error {
 	if expected == actual {
 		return nil
 	}
-	return newError(ErrorCodeRevisionConflict, "workspace file revision changed", map[string]any{
+	return newError(ErrorCodeRevisionConflict, fmt.Sprintf("revision 冲突：传入 %s，当前 %s", expected, actual), map[string]any{
 		"path":              path,
 		"expected_revision": expected,
 		"actual_revision":   actual,
@@ -589,7 +589,7 @@ func (s *Service) verifyChangeBase(change ChangeSet) error {
 	if currentExists == change.BeforeExists && actualRevision == change.BaseRevision {
 		return nil
 	}
-	return newError(ErrorCodeRevisionConflict, "workspace file changed before the prepared change could commit", map[string]any{
+	return newError(ErrorCodeRevisionConflict, fmt.Sprintf("revision 冲突：传入 %s，当前 %s", change.BaseRevision, actualRevision), map[string]any{
 		"path":              change.Path,
 		"expected_revision": change.BaseRevision,
 		"actual_revision":   actualRevision,

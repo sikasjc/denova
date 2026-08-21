@@ -68,8 +68,8 @@ func TestServiceWriteFileIfRevisionRejectsStaleRevision(t *testing.T) {
 		t.Fatalf("读取文件版本失败: %v", err)
 	}
 
-	if !strings.HasPrefix(revision, "sha256:") {
-		t.Fatalf("revision should be content-addressed, got %q", revision)
+	if len(revision) != 64 || strings.ContainsAny(revision, ":") {
+		t.Fatalf("revision should be a bare hex content address, got %q", revision)
 	}
 	if err := service.WriteFile("chapters/ch01.md", "Agent 已更新的新内容"); err != nil {
 		t.Fatalf("Agent 写入失败: %v", err)

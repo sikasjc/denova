@@ -15,6 +15,15 @@ import (
 	"denova/internal/workspacechange"
 )
 
+func TestWorkspaceReadFileDefaultsToCompactWindow(t *testing.T) {
+	if agentFileReadDefaultLimitLines != 300 {
+		t.Fatalf("default read window = %d, want 300", agentFileReadDefaultLimitLines)
+	}
+	if len(workspaceReadFileToolDescription) > 700 {
+		t.Fatalf("read_file description is too large: %d bytes", len(workspaceReadFileToolDescription))
+	}
+}
+
 func TestWorkspaceReadFileToolReturnsPartialWindowWithFullFileRevision(t *testing.T) {
 	content := "first\nsecond\nthird\nfourth"
 	path := writeTempFile(t, content)
@@ -127,19 +136,15 @@ func TestWorkspaceReadFileToolPreservesDefaultWindowSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, property := range []string{`"file_path"`, `"offset"`, `"limit"`} {
+	for _, property := range []string{`"file_path"`, `"offset"`, `"limit"`, `"revision_only"`} {
 		if !strings.Contains(string(raw), property) {
 			t.Fatalf("read_file schema is missing %s: %s", property, raw)
 		}
 	}
-	// The description must teach the refreshed-body contract so the model
-	// trusts cross-turn bodies instead of defensively re-reading.
 	for _, expected := range []string{
-		`"refreshed": true`,
-		"authoritative current snapshot",
-		"do not re-read the file to \"make sure\"",
-		"当作权威的当前快照",
-		"不要为了\"确认一下\"而重新读取",
+		"revision_only=true",
+		"without file content",
+		"after a revision conflict",
 	} {
 		if !strings.Contains(workspaceReadFileToolDescription, expected) {
 			t.Fatalf("read_file description missing %q:\n%s", expected, workspaceReadFileToolDescription)

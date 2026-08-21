@@ -319,7 +319,7 @@ func splitLedgerRecords(data []byte, atEOF bool) (advance int, token []byte, err
 
 func (s *eventStore) writeBlob(content []byte) (string, error) {
 	revision := Revision(content)
-	name := strings.TrimPrefix(revision, "sha256:")
+	name := revision
 	blobRoot, err := s.openBlobRoot()
 	if err != nil {
 		return "", err
@@ -392,7 +392,7 @@ func (s *eventStore) writeBlob(content []byte) (string, error) {
 }
 
 func (s *eventStore) readBlob(reference string) ([]byte, error) {
-	name := strings.TrimPrefix(strings.TrimSpace(reference), "sha256:")
+	name := strings.TrimSpace(reference)
 	if name == "" || strings.ContainsAny(name, `/\\`) {
 		return nil, fmt.Errorf("invalid blob reference %q", reference)
 	}
@@ -414,7 +414,7 @@ func (s *eventStore) readBlob(reference string) ([]byte, error) {
 	// The content address was verified in this process already; skip the
 	// redundant hash of large manuscripts on repeated hydration.
 	if !s.verifiedBlobs[name] {
-		if actual := Revision(content); actual != "sha256:"+name {
+		if actual := Revision(content); actual != name {
 			return nil, fmt.Errorf("workspace change blob checksum mismatch: reference=%q actual=%q", reference, actual)
 		}
 		s.verifiedBlobs[name] = true

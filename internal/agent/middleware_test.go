@@ -247,13 +247,8 @@ func TestToolOrchestratorAllowsIDEWriteAndFiltersResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "schema: tool_result.v1") ||
-		!strings.Contains(result, "mutates_workspace: true") ||
-		!strings.Contains(result, "target: chapters/ch01.md") {
-		t.Fatalf("result should include filtered metadata: %s", result)
-	}
-	if !strings.Contains(result, content) {
-		t.Fatalf("result below the high default limit should stay complete")
+	if result != content || strings.Contains(result, toolResultMetadataHeader) {
+		t.Fatalf("result should expose only the untruncated tool body: %s", result)
 	}
 }
 
@@ -273,8 +268,7 @@ func TestToolOrchestratorTruncatesResultWhenLimitConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "[tool result truncated]") ||
-		!strings.Contains(result, "truncated: true") {
+	if !strings.Contains(result, "[tool result truncated]") {
 		t.Fatalf("configured limit should truncate result: %s", result)
 	}
 }
@@ -504,8 +498,7 @@ func TestToolOrchestratorTruncatesStreamResultWhenLimitConfigured(t *testing.T) 
 	if _, eofErr := reader.Recv(); eofErr != io.EOF {
 		t.Fatalf("expected stream EOF after filtered result, got %v", eofErr)
 	}
-	if !strings.Contains(result, "[tool result truncated]") ||
-		!strings.Contains(result, "truncated: true") {
+	if !strings.Contains(result, "[tool result truncated]") {
 		t.Fatalf("configured stream limit should truncate result: %s", result)
 	}
 }

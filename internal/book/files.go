@@ -1,13 +1,13 @@
 package book
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"denova/internal/revisionfile"
 )
 
 // ErrFileRevisionConflict 表示保存时文件已被其他来源更新，调用方应重新读取后再写入。
@@ -118,9 +118,11 @@ func (s *Service) WriteFileIfRevision(relPath, content, expectedRevision string)
 	return contentRevision([]byte(content)), nil
 }
 
+// contentRevision delegates to the single canonical revision definition so a
+// revision produced here is byte-identical to one produced by the workspace
+// change service; these values are compared across module boundaries.
 func contentRevision(content []byte) string {
-	hash := sha256.Sum256(content)
-	return "sha256:" + hex.EncodeToString(hash[:])
+	return revisionfile.Revision(content)
 }
 
 // Create 新建 workspace 内文件或目录。

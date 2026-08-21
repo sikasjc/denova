@@ -34,31 +34,22 @@ const workspaceReadFileMaxSelectedBytes = 1024 * 1024
 // cap simply carry no anchor, so retention falls back to the compact receipt.
 const workspaceReadFileRevisionMaxBytes = 4 * 1024 * 1024
 
-var workspaceReadFileToolDescription = fmt.Sprintf(`Read a text file and return a bounded, line-numbered selection.
-- file_path must be an absolute path.
-- By default this tool reads up to %d lines from line 1. Use offset and limit to continue reading later sections.
-- The first result line is JSON pagination metadata.
-- Every selected source line after the metadata is returned in cat -n format with its stable 1-based line number. To edit by line, pass these numbers as edit_file start_line/end_line and copy the metadata revision to edit_file file_revision.
-- When earlier turns already read a file, cross-turn context assembly keeps that body current for you: an unchanged file keeps its body verbatim, and a file that changed since the read (for example by your own edit_file / write_file) comes back with metadata "refreshed": true and its CURRENT content, line numbers, and revision. Treat any read_file body in your context — especially a refreshed one — as the authoritative current snapshot: edit by line from it directly and do not re-read the file to "make sure".
-
-读取文本文件，返回有界的带行号选段。
-- file_path 必须是绝对路径。
-- 默认从第 1 行开始最多读取 %d 行；需要继续读取后续部分时使用 offset 和 limit。
-- 返回结果第一行是 JSON 分页元数据。
-- 元数据后的每一条源文件行都使用 cat -n 格式展示稳定的 1-based 行号；按行修改时，将这些行号作为 edit_file 的 start_line/end_line，并把元数据中的 revision 传入 edit_file 的 file_revision。
-- 此前轮次读过的文件，跨轮上下文装配会自动为你保持其正文为当前状态：未变化的文件保留原正文；读取后发生变化的文件（例如被你自己的 edit_file / write_file 修改）会带元数据 "refreshed": true 返回当前内容、行号与 revision。把你上下文中的任何 read_file 正文（尤其是 refreshed 的）当作权威的当前快照：直接按它的行号编辑，不要为了"确认一下"而重新读取。`, agentFileReadDefaultLimitLines, agentFileReadDefaultLimitLines)
+var workspaceReadFileToolDescription = fmt.Sprintf(`Read a text file. Set revision_only=true to return only compact metadata (path, revision and size) without file content; use this after a revision conflict or when only the current revision is needed. Otherwise returns a bounded, line-numbered window: file_path must be absolute, defaults to line 1 and %d lines, and offset/limit select another window. The first line is JSON metadata; pass its revision and source line numbers to edit_file.`, agentFileReadDefaultLimitLines)
 
 type workspaceReadFileInput struct {
-	FilePath string `json:"file_path" jsonschema:"required,description=Absolute path of the text file to read"`
-	Offset   int    `json:"offset,omitempty" jsonschema:"description=One-based first line to return; defaults to 1"`
-	Limit    int    `json:"limit,omitempty" jsonschema:"description=Maximum selected lines to return; defaults to 2000"`
+	FilePath     string `json:"file_path" jsonschema:"required,description=Absolute text-file path"`
+	Offset       int    `json:"offset,omitempty" jsonschema:"description=1-based first line; defaults to 1; ignored when revision_only is true"`
+	Limit        int    `json:"limit,omitempty" jsonschema:"description=Maximum lines; defaults to 300; ignored when revision_only is true"`
+	RevisionOnly bool   `json:"revision_only,omitempty" jsonschema:"description=Return only compact metadata with current revision and size; do not return file content"`
 }
 
 type workspaceReadFileMetadata struct {
-	Schema   string `json:"schema"`
-	FilePath string `json:"file_path"`
-	Offset   int    `json:"offset"`
-	Limit    int    `json:"limit"`
+	Schema       string `json:"schema"`
+	FilePath     string `json:"file_path"`
+	Offset       int    `json:"offset,omitempty"`
+	Limit        int    `json:"limit,omitempty"`
+	RevisionOnly bool   `json:"revision_only,omitempty"`
+	Size         int64  `json:"size,omitempty"`
 	// Revision anchors the full-file content identity at read time. A later turn
 	// compares it against the file's current revision to decide whether the body
 	// already in context is still fresh (keep verbatim) or stale (drop to a
@@ -94,6 +85,9 @@ func newWorkspaceReadFileTool(backend filesystem.Backend, workspaces ...string) 
 		if err != nil {
 			return "", err
 		}
+		if input.RevisionOnly {
+			return marshalWorkspaceRevisionOnlyMetadata(workspace, filePath)
+		}
 		offset, limit := normalizeWorkspaceReadWindow(input.Offset, input.Limit)
 		content, err := readWorkspaceFileSelection(ctx, backend, &filesystem.ReadRequest{
 			FilePath: filePath,
@@ -118,6 +112,28 @@ func newWorkspaceReadFileTool(backend filesystem.Backend, workspaces ...string) 
 		}
 		return string(metadata) + "\n" + formatWorkspaceLineNumbers(content, offset), nil
 	})
+}
+
+func marshalWorkspaceRevisionOnlyMetadata(workspace, filePath string) (string, error) {
+	absolute, rel, err := resolveWorkspaceReadPath(workspace, filePath)
+	if err != nil {
+		return "", err
+	}
+	content, revision, ok := readWorkspaceFullFile(workspace, absolute, rel)
+	if !ok {
+		return "", fmt.Errorf("cannot compute revision for file (missing, unreadable, or larger than %d bytes): %s", workspaceReadFileRevisionMaxBytes, filePath)
+	}
+	metadata, err := json.Marshal(workspaceReadFileMetadata{
+		Schema:       workspaceReadFileResultSchema,
+		FilePath:     absolute,
+		RevisionOnly: true,
+		Size:         int64(len(content)),
+		Revision:     revision,
+	})
+	if err != nil {
+		return "", fmt.Errorf("serialize read_file revision metadata: %w", err)
+	}
+	return string(metadata), nil
 }
 
 func readWorkspaceFileSelection(ctx context.Context, backend filesystem.Backend, req *filesystem.ReadRequest) (string, error) {

@@ -47,9 +47,11 @@ type Result struct {
 type Mutator func(Snapshot) ([]byte, error)
 
 // Revision returns the stable content-addressed revision used by file CAS.
+// The value is the bare lowercase hex digest. The algorithm name is part of the
+// implementation, not the revision token copied across API and tool boundaries.
 func Revision(content []byte) string {
 	sum := sha256.Sum256(content)
-	return fmt.Sprintf("sha256:%x", sum[:])
+	return fmt.Sprintf("%x", sum[:])
 }
 
 // ConflictError reports both sides of a failed compare-and-swap operation.

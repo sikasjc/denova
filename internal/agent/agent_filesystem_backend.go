@@ -17,7 +17,7 @@ type agentFilesystemBackend struct {
 	workspace string
 }
 
-const agentFileReadDefaultLimitLines = 2000
+const agentFileReadDefaultLimitLines = 300
 
 func newAgentFilesystemBackend(inner filesystem.Backend, workspaces ...string) filesystem.Backend {
 	if inner == nil {

@@ -62,9 +62,25 @@ type modelInputLogRecord struct {
 	ModelConfig  modelInputLogModelConfig `json:"model_config"`
 	MessageCount int                      `json:"message_count"`
 	ToolCount    int                      `json:"tool_count"`
+	SizeBySource modelInputSizeBySource   `json:"size_by_source"`
 	Cache        modelInputLogCache       `json:"cache_attribution"`
 	Messages     []*schema.Message        `json:"messages"`
 	Tools        []modelInputLogTool      `json:"tools,omitempty"`
+}
+
+type modelInputSize struct {
+	Bytes  int `json:"bytes"`
+	Tokens int `json:"tokens"`
+}
+
+type modelInputSizeBySource struct {
+	SystemPrompt modelInputSize `json:"system_prompt"`
+	History      modelInputSize `json:"history"`
+	CurrentInput modelInputSize `json:"current_input"`
+	ToolSchemas  modelInputSize `json:"tool_schemas"`
+	FileViews    modelInputSize `json:"file_views"`
+	Receipts     modelInputSize `json:"receipts"`
+	Total        modelInputSize `json:"total"`
 }
 
 type modelInputLogInputJob struct {
@@ -315,6 +331,7 @@ func writeModelInputLogJob(job modelInputLogJob) error {
 			ModelConfig:  modelInputLogConfigFromOpenAI(input.Config),
 			MessageCount: input.MessageCount,
 			ToolCount:    input.ToolCount,
+			SizeBySource: modelInputSizeAttribution(input.Messages, input.Tools),
 			Cache:        modelInputLogCacheAttribution(input.Messages, tools),
 			Messages:     input.Messages,
 			Tools:        tools,
@@ -461,6 +478,57 @@ func modelInputLogConfigFromOpenAI(cfg openai.ChatModelConfig) modelInputLogMode
 		ReasoningEffort:     cfg.ReasoningEffort,
 		Modalities:          cfg.Modalities,
 	}
+}
+
+func modelInputSizeAttribution(messages []*schema.Message, tools []*schema.ToolInfo) modelInputSizeBySource {
+	var result modelInputSizeBySource
+	for index, msg := range messages {
+		size := modelInputMessageSize(msg)
+		result.Total = addModelInputSize(result.Total, size)
+		if msg == nil {
+			continue
+		}
+		if msg.Role == schema.System {
+			result.SystemPrompt = addModelInputSize(result.SystemPrompt, size)
+		} else if index == len(messages)-1 && msg.Role == schema.User {
+			result.CurrentInput = addModelInputSize(result.CurrentInput, size)
+		} else {
+			result.History = addModelInputSize(result.History, size)
+		}
+		if msg.Role == schema.Tool {
+			if normalizeToolName(msg.ToolName) == "read_file" && !isRetainedToolReceipt(msg.Content) {
+				result.FileViews = addModelInputSize(result.FileViews, modelInputTextSize(msg.Content))
+			} else if isRetainedToolReceipt(msg.Content) || strings.HasPrefix(strings.TrimSpace(msg.Content), "{") && strings.Contains(msg.Content, `"schema":"workspace_change.tool_result.v1"`) {
+				result.Receipts = addModelInputSize(result.Receipts, modelInputTextSize(msg.Content))
+			}
+		}
+	}
+	if len(tools) > 0 {
+		if data, err := json.Marshal(tools); err == nil {
+			result.ToolSchemas = modelInputTextSize(string(data))
+		}
+	}
+	result.Total = addModelInputSize(result.Total, result.ToolSchemas)
+	return result
+}
+
+func modelInputMessageSize(msg *schema.Message) modelInputSize {
+	if msg == nil {
+		return modelInputSize{}
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return modelInputTextSize(msg.Content)
+	}
+	return modelInputSize{Bytes: len(data), Tokens: estimateMessageTokens(msg)}
+}
+
+func modelInputTextSize(content string) modelInputSize {
+	return modelInputSize{Bytes: len(content), Tokens: estimateStringTokens(content)}
+}
+
+func addModelInputSize(left, right modelInputSize) modelInputSize {
+	return modelInputSize{Bytes: left.Bytes + right.Bytes, Tokens: left.Tokens + right.Tokens}
 }
 
 func modelInputLogTools(tools []*schema.ToolInfo) []modelInputLogTool {

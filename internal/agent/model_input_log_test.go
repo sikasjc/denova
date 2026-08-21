@@ -17,6 +17,28 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+func TestModelInputSizeAttributionSeparatesSources(t *testing.T) {
+	messages := []*schema.Message{
+		schema.SystemMessage("system"),
+		schema.UserMessage("earlier"),
+		schema.ToolMessage("{\"schema\":\"workspace_file.read.v2\"}\n     1\tbody", "call-read", schema.WithToolName("read_file")),
+		schema.ToolMessage("{\"schema\":\"tool_result.retained.v1\",\"tool_name\":\"read_file\",\"path\":\"a.go\"}", "call-receipt", schema.WithToolName("read_file")),
+		schema.UserMessage("current"),
+	}
+	tools := []*schema.ToolInfo{{Name: "read_file", Desc: "compact"}}
+
+	sizes := modelInputSizeAttribution(messages, tools)
+	if sizes.SystemPrompt.Bytes == 0 || sizes.History.Bytes == 0 || sizes.CurrentInput.Bytes == 0 || sizes.ToolSchemas.Bytes == 0 {
+		t.Fatalf("expected all top-level sources to be measured: %+v", sizes)
+	}
+	if sizes.FileViews.Bytes == 0 || sizes.Receipts.Bytes == 0 {
+		t.Fatalf("expected file views and receipts to be measured: %+v", sizes)
+	}
+	if sizes.Total.Tokens <= 0 || sizes.Total.Bytes <= sizes.ToolSchemas.Bytes {
+		t.Fatalf("invalid total attribution: %+v", sizes)
+	}
+}
+
 func TestLogFullModelInputWritesUntruncatedMessages(t *testing.T) {
 	oldPath := modelInputLogPath
 	oldSeq := modelInputLogSeq.Load()

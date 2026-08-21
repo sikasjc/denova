@@ -47,15 +47,11 @@ func TestFilterToolResultKeepsContentBelowHighDefaultLimit(t *testing.T) {
 	if filtered.Truncated {
 		t.Fatalf("tool result below the high default limit should not truncate")
 	}
-	if !strings.Contains(filtered.Content, "schema: tool_result.v1") ||
-		!strings.Contains(filtered.Content, "mutates_workspace: true") ||
-		!strings.Contains(filtered.Content, "capability: file_write") ||
-		!strings.Contains(filtered.Content, "target: chapters/ch00001.md") ||
-		!strings.Contains(filtered.Content, "idempotency_key: write_file:") {
-		t.Fatalf("filtered result should include model-visible metadata: %s", filtered.Content)
+	if filtered.Content != content {
+		t.Fatalf("filtered result should expose only the tool body below the limit: %q", filtered.Content)
 	}
-	if !strings.Contains(filtered.Content, content) {
-		t.Fatalf("filtered result should include full content below the default limit")
+	if strings.Contains(filtered.Content, toolResultMetadataHeader) || strings.Contains(filtered.Content, "idempotency_key") {
+		t.Fatalf("operational metadata leaked into model-visible content: %s", filtered.Content)
 	}
 }
 
@@ -65,7 +61,7 @@ func TestFilterToolResultBoundsOutputAboveHighDefaultLimit(t *testing.T) {
 	if !filtered.Truncated || filtered.Manifest.MaxResultBytes != defaultToolResultMaxBytes {
 		t.Fatalf("default tool result safety cap was not enforced: %#v", filtered)
 	}
-	if !strings.Contains(filtered.Content, "[tool result truncated]") || !strings.Contains(filtered.Content, "truncated: true") {
+	if !strings.Contains(filtered.Content, "[tool result truncated]") {
 		t.Fatalf("bounded result should explain its truncation: %s", filtered.Content[len(filtered.Content)-512:])
 	}
 }
@@ -76,9 +72,8 @@ func TestFilterToolResultBoundsOutputWhenLimitConfigured(t *testing.T) {
 	if !filtered.Truncated {
 		t.Fatalf("expected long result to be truncated when limit is configured")
 	}
-	if !strings.Contains(filtered.Content, "[tool result truncated]") ||
-		!strings.Contains(filtered.Content, "truncated: true") {
-		t.Fatalf("filtered result should include truncation markers: %s", filtered.Content)
+	if !strings.Contains(filtered.Content, "[tool result truncated]") {
+		t.Fatalf("filtered result should include a truncation marker: %s", filtered.Content)
 	}
 	if len(filtered.Content) > 8*1024+1024 {
 		t.Fatalf("filtered result should stay bounded, got %d bytes", len(filtered.Content))

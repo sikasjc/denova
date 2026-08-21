@@ -135,8 +135,8 @@ func TestToolResultContextRecorderPersistsAlreadyBoundedResultExactly(t *testing
 	if got := conversation.messages[1].Content; got != bounded.Content {
 		t.Fatalf("bounded result was filtered a second time: got_bytes=%d want_bytes=%d", len(got), len(bounded.Content))
 	}
-	if !strings.Contains(conversation.messages[1].Content, "[tool result truncated]") || !strings.Contains(conversation.messages[1].Content, toolResultMetadataHeader) {
-		t.Fatalf("tool-boundary truncation metadata should remain intact: %q", conversation.messages[1].Content)
+	if !strings.Contains(conversation.messages[1].Content, "[tool result truncated]") || strings.Contains(conversation.messages[1].Content, toolResultMetadataHeader) {
+		t.Fatalf("tool-boundary result should keep only its truncation marker: %q", conversation.messages[1].Content)
 	}
 }
 

@@ -312,6 +312,37 @@ func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolRe
 		}
 	}
 
+	// Keep only the newest successful read_file result for each path. Older
+	// windows for the same file are stale context and their paired calls/results
+	// can be dropped together without orphaning the tool protocol.
+	latestReadCallByPath := make(map[string]string)
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg == nil || msg.Role != schema.Tool {
+			continue
+		}
+		callID := strings.TrimSpace(msg.ToolCallID)
+		callPolicy, ok := callsByID[callID]
+		if !ok || !callPolicy.valid || !callPolicy.retain || resultCountsByID[callID] != 1 || callPolicy.toolName != "read_file" {
+			continue
+		}
+		path := retainedReadFilePath(msg.Content, callPolicy.arguments)
+		if path == "" {
+			continue
+		}
+		if _, exists := latestReadCallByPath[path]; !exists {
+			latestReadCallByPath[path] = callID
+		}
+	}
+	isSupersededRead := func(callID string, callPolicy retainedCall) bool {
+		if callPolicy.toolName != "read_file" {
+			return false
+		}
+		path := retainedReadFilePath(resultContentByID[callID], callPolicy.arguments)
+		latest, ok := latestReadCallByPath[path]
+		return path != "" && ok && latest != callID
+	}
+
 	// Decide which read_file bodies stay usable. Scanning newest→oldest lets
 	// the freshest prose win the byte budget. An unchanged file keeps the exact
 	// body the model already saw (byte-identical reusable prefix). A file that
@@ -336,7 +367,7 @@ func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolRe
 			if !ok || !callPolicy.valid || !callPolicy.retain || resultCountsByID[callID] != 1 {
 				continue
 			}
-			if callPolicy.toolName != "read_file" || isRetainedToolReceipt(msg.Content) {
+			if callPolicy.toolName != "read_file" || isRetainedToolReceipt(msg.Content) || isSupersededRead(callID, callPolicy) {
 				continue
 			}
 			metadata, parsed := parseReadFileMetadata(msg.Content)
@@ -386,7 +417,7 @@ func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolRe
 			for _, call := range msg.ToolCalls {
 				callID := strings.TrimSpace(call.ID)
 				callPolicy, knownCall := callsByID[callID]
-				if callID == "" || !knownCall || !callPolicy.valid || resultCountsByID[callID] != 1 || !callPolicy.retain {
+				if callID == "" || !knownCall || !callPolicy.valid || resultCountsByID[callID] != 1 || !callPolicy.retain || isSupersededRead(callID, callPolicy) {
 					continue
 				}
 				arguments := callPolicy.arguments
@@ -402,7 +433,7 @@ func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolRe
 		case schema.Tool:
 			callID := strings.TrimSpace(msg.ToolCallID)
 			callPolicy, ok := callsByID[callID]
-			if callID == "" || !ok || !callPolicy.valid || resultCountsByID[callID] != 1 || !callPolicy.retain {
+			if callID == "" || !ok || !callPolicy.valid || resultCountsByID[callID] != 1 || !callPolicy.retain || isSupersededRead(callID, callPolicy) {
 				continue
 			}
 			next := *msg
@@ -424,6 +455,19 @@ func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolRe
 		}
 	}
 	return filtered
+}
+
+func retainedReadFilePath(content, arguments string) string {
+	if metadata, ok := parseReadFileMetadata(content); ok {
+		return strings.TrimSpace(metadata.FilePath)
+	}
+	var receipt retainedToolReceipt
+	if json.Unmarshal([]byte(strings.TrimSpace(content)), &receipt) == nil &&
+		receipt.Schema == retainedToolReceiptSchema &&
+		normalizeToolName(receipt.ToolName) == "read_file" {
+		return strings.TrimSpace(receipt.Path)
+	}
+	return strings.TrimSpace(toolPathFromArgs(arguments))
 }
 
 // refreshedReadFileBody rebuilds one read_file result for a file that changed

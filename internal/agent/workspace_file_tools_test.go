@@ -129,39 +129,23 @@ func TestWorkspaceEditFileToolBatchesOneFileAndReturnsBoundedReceipt(t *testing.
 	}
 }
 
-func TestWorkspaceFileToolDescriptionsRequireSafePatchRecovery(t *testing.T) {
+func TestWorkspaceFileToolDescriptionsStayCompactAndPreserveSafetyRules(t *testing.T) {
+	if len(workspaceEditFileToolDescription) > 1200 {
+		t.Fatalf("edit_file description is too large: %d bytes", len(workspaceEditFileToolDescription))
+	}
 	for _, expected := range []string{
 		"Prefer start_line/end_line",
-		"read_file returns 1-based line numbers",
-		"Do not fall back to a full-file replacement",
-		"Use old_string/new_string only when a line range cannot express the change",
-		"never reconstruct it from memory",
-		"优先使用 start_line/end_line",
-		"read_file 会为此返回从 1 开始的行号",
-		"不要降级为整文件覆盖",
-		"仅当修改无法用行范围表达时",
-		"行内局部修改",
-		"禁止凭记忆重建",
-		"returns the file's new revision",
-		"keep editing the same file without re-reading",
-		"before/after line ranges",
-		"成功后会返回文件的新 revision",
-		"把该 revision 作为 file_revision 传入即可免重读",
-		"利用返回的行号区间推算后续行号",
-		"Recover from failures without reflexively re-reading",
-		"从失败中恢复时不要条件反射式地重读",
+		"copy read_file metadata revision",
+		"Copy old_string exactly",
+		"same original snapshot",
+		"Never recover by replacing the whole file",
 	} {
 		if !strings.Contains(workspaceEditFileToolDescription, expected) {
 			t.Fatalf("edit_file description missing %q:\n%s", expected, workspaceEditFileToolDescription)
 		}
 	}
-	for _, expected := range []string{
-		"failed exact edit do not by themselves authorize a full rewrite",
-		"edit_file 精确匹配失败，都不等于获得覆盖已有章节的授权",
-	} {
-		if !strings.Contains(workspaceWriteFileToolDescription, expected) {
-			t.Fatalf("write_file description missing %q:\n%s", expected, workspaceWriteFileToolDescription)
-		}
+	if len(workspaceWriteFileToolDescription) > 500 || !strings.Contains(workspaceWriteFileToolDescription, "failed edit does not authorize overwriting") {
+		t.Fatalf("write_file description is not compact and safe: %s", workspaceWriteFileToolDescription)
 	}
 }
 
@@ -259,6 +243,25 @@ func TestWorkspaceEditFileLineModeRequiresAndForwardsReadRevision(t *testing.T) 
 	}
 	if service.readCalls != 0 || service.applyRequest.BaseRevision != "sha256:read-snapshot" {
 		t.Fatalf("line edit did not forward read revision atomically: %#v", service.applyRequest)
+	}
+}
+
+func TestWorkspaceEditFileTrimsRevisionWhitespaceOnly(t *testing.T) {
+	service := &recordingWorkspaceChangeService{workspace: t.TempDir()}
+	base, err := newWorkspaceEditFileTool(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `{
+		"file_path":"chapters/ch01.md",
+		"file_revision":"  abcdef12  ",
+		"edits":[{"start_line":2,"new_string":"replacement"}]
+	}`
+	if _, err := base.(tool.InvokableTool).InvokableRun(context.Background(), payload); err != nil {
+		t.Fatal(err)
+	}
+	if service.applyRequest.BaseRevision != "abcdef12" {
+		t.Fatalf("revision = %q, want surrounding whitespace trimmed", service.applyRequest.BaseRevision)
 	}
 }
 
@@ -451,30 +454,40 @@ func TestWorkspaceWriteFileToolDelegatesMissingDetectionToService(t *testing.T) 
 	}
 }
 
-func TestWorkspaceChangeErrorHidesInternalRevisionsFromAgent(t *testing.T) {
+// A revision conflict is only actionable if the model can see which revision it
+// sent and which one the file is at: without both, a model that merely mangled
+// the token concludes the file was rewritten and re-reads forever. Revisions are
+// content digests of the model's own workspace file and carry no secret, so they
+// are reported in full.
+func TestWorkspaceChangeConflictErrorNamesBothRevisions(t *testing.T) {
 	err := &workspacechange.Error{
 		Code:    workspacechange.ErrorCodeRevisionConflict,
 		Message: "workspace file revision changed",
 		Details: map[string]any{
 			"path":              "chapters/ch01.md",
-			"expected_revision": "sha256:before",
-			"actual_revision":   "sha256:after",
+			"expected_revision": "aaaa1111",
+			"actual_revision":   "bbbb2222",
 		},
 	}
 	message, ok := formatWorkspaceChangeToolError("edit_file", err)
 	if !ok {
 		t.Fatal("workspace change error should be recognized")
 	}
-	if strings.Contains(message, "expected_revision") || strings.Contains(message, "actual_revision") || strings.Contains(message, "sha256:") {
-		t.Fatalf("tool error exposed internal revisions: %s", message)
+	for _, want := range []string{"aaaa1111", "bbbb2222", "expected_revision", "actual_revision"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("conflict error should report %q: %s", want, message)
+		}
 	}
 }
 
 func TestWorkspaceChangeReceiptReturnsNewRevisionAndHidesBaseRevision(t *testing.T) {
 	raw := `{"schema":"workspace_change.tool_result.v1","status":"applied","workspace":"/workspace/book-a","change_group_id":"group-1","change_set_id":"change-1","path":"chapters/ch01.md","base_revision":"sha256:before","revision":"sha256:after","review_status":"pending","apply_state":"applied"}`
 	filtered := FilterToolResultForModel("edit_file", `{"file_path":"chapters/ch01.md","edits":[]}`, raw)
-	if !strings.Contains(filtered.Content, `"change_set_id":"change-1"`) {
-		t.Fatalf("model receipt lost public change identity: %s", filtered.Content)
+	if strings.Contains(filtered.Content, "change_set_id") || strings.Contains(filtered.Content, "apply_state") || strings.Contains(filtered.Content, `"status"`) {
+		t.Fatalf("model receipt retained workflow metadata: %s", filtered.Content)
+	}
+	if !strings.Contains(filtered.Content, `"path":"chapters/ch01.md"`) {
+		t.Fatalf("model receipt lost the edited path: %s", filtered.Content)
 	}
 	if !strings.Contains(filtered.Content, `"revision":"sha256:after"`) {
 		t.Fatalf("model receipt did not return the new revision for chaining: %s", filtered.Content)
@@ -529,30 +542,27 @@ func TestWorkspaceChangeReceiptIsTrustedOnlyForWorkspaceFileTools(t *testing.T) 
 	}
 }
 
-func TestWorkspaceChangeConflictErrorGuidesRevisionRefresh(t *testing.T) {
+func TestWorkspaceChangeConflictErrorIsCompactChinese(t *testing.T) {
 	err := &workspacechange.Error{
 		Code:    workspacechange.ErrorCodeRevisionConflict,
 		Message: "workspace file revision changed",
 		Details: map[string]any{
 			"path":              "chapters/ch01.md",
-			"expected_revision": "sha256:before",
-			"actual_revision":   "sha256:after",
+			"expected_revision": "aaaa1111",
+			"actual_revision":   "bbbb2222",
 		},
 	}
 	message, ok := formatWorkspaceChangeToolError("edit_file", err)
 	if !ok {
 		t.Fatal("workspace change error should be recognized")
 	}
-	for _, expected := range []string{
-		`"code":"revision_conflict"`,
-		"copy the revision from that newest read_file result",
-		"Do not reuse a file_revision value from an earlier attempt",
-		"使用这次最新 read_file 结果里的 revision",
-		"不要复用之前尝试或旧上下文快照里的 file_revision",
-	} {
+	for _, expected := range []string{`"code":"revision_conflict"`, "Revision 冲突：传入 aaaa1111，当前 bbbb2222。"} {
 		if !strings.Contains(message, expected) {
-			t.Fatalf("conflict guidance missing %q:\n%s", expected, message)
+			t.Fatalf("conflict message missing %q:\n%s", expected, message)
 		}
+	}
+	if strings.Contains(message, "Copy") || strings.Contains(message, "re-read") {
+		t.Fatalf("conflict message should stay compact: %s", message)
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -154,12 +153,7 @@ func filteredToolResultFromBody(manifest ToolManifest, args, body string, origin
 	}
 	target := toolPathFromArgs(args)
 	idempotencyKey := toolIdempotencyKey(manifest.Name, args)
-	metadata := formatToolResultMetadata(manifest, originalBytes, len(body), truncated, target, idempotencyKey)
 	result := strings.TrimRight(body, "\n")
-	if result != "" {
-		result += "\n\n"
-	}
-	result += metadata
 	return FilteredToolResult{
 		Content:        result,
 		Manifest:       manifest,
@@ -244,24 +238,4 @@ func truncateUTF8Bytes(content string, limit int) (string, bool) {
 func toolIdempotencyKey(toolName, args string) string {
 	hash := sha256.Sum256([]byte(strings.TrimSpace(args)))
 	return fmt.Sprintf("%s:%s", normalizeToolName(toolName), hex.EncodeToString(hash[:8]))
-}
-
-func formatToolResultMetadata(manifest ToolManifest, originalBytes, returnedBodyBytes int, truncated bool, target, idempotencyKey string) string {
-	fields := []string{
-		toolResultMetadataHeader,
-		"schema: tool_result.v1",
-		"source: " + string(manifest.Source),
-		"capability: " + firstNonEmpty(manifest.Capability, "unclassified"),
-		fmt.Sprintf("mutates_workspace: %t", manifest.MutatesWorkspace),
-		fmt.Sprintf("requires_post_check: %t", manifest.RequiresPostCheck),
-		fmt.Sprintf("max_result_bytes: %d", manifest.MaxResultBytes),
-		fmt.Sprintf("truncated: %t", truncated),
-		fmt.Sprintf("original_bytes: %d", originalBytes),
-		fmt.Sprintf("returned_body_bytes: %d", returnedBodyBytes),
-		"idempotency_key: " + idempotencyKey,
-	}
-	if target = filepath.ToSlash(strings.TrimSpace(target)); target != "" {
-		fields = append(fields, "target: "+target)
-	}
-	return strings.Join(fields, "\n")
 }

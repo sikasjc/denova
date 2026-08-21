@@ -55,6 +55,24 @@ func TestRetentionKeepsBodyWhenRevisionUnchanged(t *testing.T) {
 	}
 }
 
+func TestRetentionDropsOlderReadOfSamePath(t *testing.T) {
+	older := readFileExchange("call-old", "/workspace/chapters/ch00001.md", "sha256:a", "旧窗口")
+	newer := readFileExchange("call-new", "/workspace/chapters/ch00001.md", "sha256:a", "最新窗口")
+	messages := append(append([]*schema.Message{}, older...), newer...)
+	resolver := revisionOnlyResolver(map[string]string{"/workspace/chapters/ch00001.md": "sha256:a"})
+
+	filtered := applyToolResultContextPolicyWithResolver(messages, idePolicy(256*1024), resolver)
+	if len(filtered) != 2 {
+		t.Fatalf("only the newest call/result pair should remain: %#v", filtered)
+	}
+	if len(filtered[0].ToolCalls) != 1 || filtered[0].ToolCalls[0].ID != "call-new" {
+		t.Fatalf("newest read_file call should remain: %#v", filtered[0])
+	}
+	if !strings.Contains(filtered[1].Content, "最新窗口") || strings.Contains(filtered[1].Content, "旧窗口") {
+		t.Fatalf("only the newest body should remain: %s", filtered[1].Content)
+	}
+}
+
 // TestRetentionRefreshesBodyWhenRevisionChanged is the anti re-read core: a file
 // that changed after the read — most commonly through the model's own edits —
 // is refreshed to its CURRENT window instead of collapsing, so the next turn
