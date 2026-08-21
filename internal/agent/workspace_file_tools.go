@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 
@@ -12,30 +13,31 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 	"github.com/cloudwego/eino/compose"
 
+	"denova/internal/observability"
 	"denova/internal/workspacechange"
 )
 
 var workspaceEditFileToolDescription = strings.TrimSpace(`Apply one or more line-based or exact text edits to a single workspace file as one reviewed change.
 - file_path must identify one file inside the current workspace.
-- Prefer start_line/end_line with new_string. read_file returns 1-based line numbers and a revision for this purpose; copy that revision to file_revision. end_line is inclusive and defaults to start_line.
+- Prefer start_line/end_line with new_string. read_file returns 1-based line numbers and a revision for this purpose; copy that revision to file_revision. If the numbered file body and its revision are already in your context, edit by line directly without re-reading; read the file first only when they are missing. A successful edit_file or write_file result returns the file's new revision plus each edit's before/after line ranges: pass the revision as file_revision to keep editing the same file without re-reading, and update line numbers for later edits from the reported ranges (a line after an edit's before-range moves by after_end_line - before_end_line). Re-read only when you cannot reliably compute the current line numbers (the file changed outside your own edits, or a revision conflict was reported). end_line is inclusive and defaults to start_line.
 - A line edit replaces complete source lines. The tool preserves the file's line-ending style and keeps the following line separate when replacing a newline-terminated range. An empty new_string deletes the selected lines.
-- Use old_string/new_string only when line targeting is unsuitable. Copy old_string verbatim from the latest read, including punctuation, quotes, spaces and line breaks.
+- Use old_string/new_string only when a line range cannot express the change: the change is inside one line (partial-line edit), or replace_all must replace every occurrence. Copy old_string verbatim from the latest read_file body, including punctuation, quotes, spaces and line breaks; never reconstruct it from memory.
 - Every item in edits is resolved against the same original file snapshot, not against the result of an earlier item.
 - Keep edits non-overlapping. Use replace_all only when every exact occurrence should change.
 - Put dependent changes to the same file in one call. Independent files may use separate edit_file calls in the same assistant response.
 - The tool captures and protects the current file snapshot internally when the call starts.
-- If a line range is invalid, exact matching fails, or the revision changed, read the file again and rebuild the edit from current numbered output. Do not fall back to a full-file replacement.
+- Recover from failures without reflexively re-reading: if only a line range is out of bounds or old_string matching fails while the numbered body in your context is current (its metadata revision is the latest one you hold, possibly refreshed), fix the selector directly from that body — copy old_string verbatim from it — and retry. Read the file again only when a revision conflict is reported or the current numbered body is genuinely missing from your context; then rebuild the edit from the newest numbered output. Do not fall back to a full-file replacement.
 
 将一个或多个按行或精确文本修改作为一次可审阅变更应用到同一个 workspace 文件。
 - file_path 必须指向当前 workspace 内的单个文件。
-- 优先使用 start_line/end_line 和 new_string；read_file 会为此返回从 1 开始的行号与 revision，请把该 revision 传入 file_revision。end_line 包含在替换范围内，省略时等于 start_line。
+- 优先使用 start_line/end_line 和 new_string。read_file 会为此返回从 1 开始的行号与 revision，请把该 revision 传入 file_revision。上下文中已有带编号的文件正文及其 revision 时直接按行修改、无需重读；两者缺失时才先 read_file。edit_file / write_file 成功后会返回文件的新 revision 以及每个修改的前后行号区间：继续修改同一文件时把该 revision 作为 file_revision 传入即可免重读，并利用返回的行号区间推算后续行号（位于某个修改 before 区间之后的行，按 after_end_line - before_end_line 平移）。只有无法可靠推算当前行号（文件在你的修改之外发生变化、或返回了 revision 冲突）时才重新 read_file。end_line 包含在替换范围内，省略时等于 start_line。
 - 按行修改会替换完整源文件行，工具会保持文件换行符风格；被替换范围原本带换行符时会保持下一行独立。new_string 为空表示删除所选行。
-- 仅在行号不适合定位时使用 old_string/new_string；old_string 必须从最新读取结果逐字复制并保留标点、引号、空格和换行。
+- 仅当修改无法用行范围表达时才使用 old_string/new_string：修改发生在同一行内部（行内局部修改），或需要 replace_all 替换所有出现。old_string 必须从最新 read_file 结果逐字复制，保留标点、引号、空格和换行，禁止凭记忆重建。
 - edits 中的每一项都基于同一份原始文件快照解析，不基于前一项修改后的结果。
 - 各修改区间不得重叠；只有确实需要替换全部精确匹配时才使用 replace_all。
 - 同一文件内相互依赖的修改必须放在一次调用中；不同文件的独立修改可以在同一轮分别调用 edit_file。
 - 工具会在调用开始时自行获取并保护当前文件快照。
-- 如果行号范围无效、精确匹配失败或 revision 已变化，重新读取文件并根据最新带行号结果重建 edit；不要降级为整文件覆盖。`)
+- 从失败中恢复时不要条件反射式地重读：如果只是行号越界或 old_string 匹配失败，而上下文中的带行号正文仍是当前的（其元数据 revision 是你持有的最新值，可能是 refreshed 的），直接从该正文修正选择器——old_string 从中逐字复制——后重试。只有返回 revision 冲突、或上下文中确实缺少当前带行号正文时才重新 read_file，并按最新带行号输出重建修改。不要降级为整文件覆盖。`)
 
 var workspaceWriteFileToolDescription = strings.TrimSpace(`Replace the complete content of one workspace file as a reviewed change.
 - Use edit_file for localized changes; use write_file only for a new file or an intentional full rewrite.
@@ -51,7 +53,6 @@ var workspaceWriteFileToolDescription = strings.TrimSpace(`Replace the complete 
 
 type workspaceChangeService interface {
 	Workspace() string
-	ReadFile(string) (content string, revision string, err error)
 	ApplyEdits(context.Context, workspacechange.ApplyEditsRequest) (workspacechange.ChangeSet, error)
 	ReplaceFile(context.Context, workspacechange.ReplaceFileRequest) (workspacechange.ChangeSet, error)
 }
@@ -64,9 +65,9 @@ type workspaceEditFileInput struct {
 
 type workspaceEditFileTextEdit struct {
 	ID         string `json:"id,omitempty" jsonschema:"description=Optional stable identifier used to associate review comments with this edit"`
-	StartLine  int    `json:"start_line,omitempty" jsonschema:"description=Preferred 1-based first complete source line to replace"`
+	StartLine  int    `json:"start_line,omitempty" jsonschema:"description=Primary selector: 1-based first complete source line to replace; use whenever numbered file content from read_file is in context"`
 	EndLine    int    `json:"end_line,omitempty" jsonschema:"description=Inclusive 1-based last source line; defaults to start_line"`
-	OldString  string `json:"old_string,omitempty" jsonschema:"description=Fallback exact non-empty text selector; mutually exclusive with start_line/end_line"`
+	OldString  string `json:"old_string,omitempty" jsonschema:"description=Only when a line range cannot express the change: partial-line edits inside one line, or with replace_all; exact non-empty text copied verbatim from the read_file body; mutually exclusive with start_line/end_line"`
 	NewString  string `json:"new_string" jsonschema:"description=Replacement text; an empty string deletes the matched text"`
 	ReplaceAll bool   `json:"replace_all,omitempty" jsonschema:"description=With old_string only, replace every exact occurrence; defaults to false"`
 }
@@ -86,7 +87,18 @@ func newWorkspaceEditFileTool(changes workspaceChangeService) (tool.BaseTool, er
 	}
 	return utils.InferTool("edit_file", workspaceEditFileToolDescription, func(ctx context.Context, input workspaceEditFileInput) (string, error) {
 		baseRevision := strings.TrimSpace(input.FileRevision)
+		lineEdits, exactEdits := 0, 0
+		for _, edit := range input.Edits {
+			if edit.StartLine != 0 || edit.EndLine != 0 {
+				lineEdits++
+			} else {
+				exactEdits++
+			}
+		}
+		logger := observability.Logger("agent-tool")
+		logger.Info("edit_file_called", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.Int("edits", len(input.Edits)), slog.Int("line_edits", lineEdits), slog.Int("exact_edits", exactEdits), slog.Bool("model_file_revision", baseRevision != ""))
 		if containsLineBasedEdit(input.Edits) && baseRevision == "" {
+			logger.Warn("edit_file_missing_file_revision", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.Int("line_edits", lineEdits))
 			return "", &workspacechange.Error{
 				Code:    workspacechange.ErrorCodeInvalidEdit,
 				Message: "file_revision from read_file is required for line-based edits",
@@ -97,13 +109,10 @@ func newWorkspaceEditFileTool(changes workspaceChangeService) (tool.BaseTool, er
 				},
 			}
 		}
-		if baseRevision == "" {
-			var err error
-			baseRevision, err = currentWorkspaceBaseRevision(changes, input.FilePath)
-			if err != nil {
-				return "", err
-			}
-		}
+		// Exact-only edits may omit file_revision: the service resolves the base
+		// from the current snapshot under its own lock, and old_string matching
+		// is the freshness anchor. Skipping the pre-read removes one full
+		// read + hash per call.
 		edits := make([]workspacechange.TextEdit, 0, len(input.Edits))
 		for _, edit := range input.Edits {
 			edits = append(edits, workspacechange.TextEdit{
@@ -122,8 +131,12 @@ func newWorkspaceEditFileTool(changes workspaceChangeService) (tool.BaseTool, er
 			Metadata:     workspaceChangeMetadata(ctx),
 		})
 		if err != nil {
+			code, expectedRevision, actualRevision := workspaceChangeErrorDiagnostics(err)
+			logger.Warn("edit_file_failed", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.Int("line_edits", lineEdits), slog.Int("exact_edits", exactEdits), slog.String("error_code", code), slog.String("expected_revision", expectedRevision), slog.String("actual_revision", actualRevision), slog.Any("error", err))
 			return "", err
 		}
+		logger.Info("edit_file_applied", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.Int("line_edits", lineEdits), slog.Int("exact_edits", exactEdits), slog.String("change_set_id", changeSet.ID), slog.String("review_status", changeSet.ReviewStatus))
+		rememberWorkspaceFileRevision(workspace, changeSet.Path, changeSet.Revision)
 		return marshalWorkspaceChangeToolReceipt(workspace, changeSet)
 	})
 }
@@ -146,19 +159,22 @@ func newWorkspaceWriteFileTool(changes workspaceChangeService) (tool.BaseTool, e
 		return nil, err
 	}
 	return utils.InferTool("write_file", workspaceWriteFileToolDescription, func(ctx context.Context, input workspaceWriteFileInput) (string, error) {
-		baseRevision, err := currentWorkspaceBaseRevisionOrMissing(changes, input.FilePath)
-		if err != nil {
-			return "", err
-		}
+		logger := observability.Logger("agent-tool")
+		logger.Info("write_file_called", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.Int("content_bytes", len(input.Content)))
+		// An empty base revision lets the service anchor against the current
+		// state under its mutation lock, which is write_file's intent: it never
+		// read the file and always means to replace what is there now.
 		changeSet, err := changes.ReplaceFile(ctx, workspacechange.ReplaceFileRequest{
 			Path:         input.FilePath,
 			Content:      input.Content,
-			BaseRevision: baseRevision,
+			BaseRevision: "",
 			Metadata:     workspaceChangeMetadata(ctx),
 		})
 		if err != nil {
+			logger.Warn("write_file_failed", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.Any("error", err))
 			return "", err
 		}
+		rememberWorkspaceFileRevision(workspace, changeSet.Path, changeSet.Revision)
 		return marshalWorkspaceChangeToolReceipt(workspace, changeSet)
 	})
 }
@@ -172,34 +188,6 @@ func canonicalChangeWorkspace(changes workspaceChangeService) (string, error) {
 		return "", fmt.Errorf("workspace change service path is not absolute: %s", workspace)
 	}
 	return filepath.Clean(workspace), nil
-}
-
-func currentWorkspaceBaseRevision(changes workspaceChangeService, path string) (string, error) {
-	_, revision, err := changes.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	revision = strings.TrimSpace(revision)
-	if revision != "" {
-		return revision, nil
-	}
-	return "", &workspacechange.Error{
-		Code:    workspacechange.ErrorCodeConflict,
-		Message: "workspace change service returned an empty current revision",
-		Details: map[string]any{"path": path, "workspace_mutated": false},
-	}
-}
-
-func currentWorkspaceBaseRevisionOrMissing(changes workspaceChangeService, path string) (string, error) {
-	revision, err := currentWorkspaceBaseRevision(changes, path)
-	if err == nil {
-		return revision, nil
-	}
-	var changeErr *workspacechange.Error
-	if errors.As(err, &changeErr) && changeErr.Code == workspacechange.ErrorCodeNotFound {
-		return "missing", nil
-	}
-	return "", err
 }
 
 func workspaceChangeMetadata(ctx context.Context) workspacechange.ChangeMetadata {
@@ -239,12 +227,59 @@ func marshalWorkspaceChangeToolReceipt(workspace string, changeSet workspacechan
 		Revision:       changeSet.Revision,
 		ReviewStatus:   changeSet.ReviewStatus,
 		ApplyState:     changeSet.ApplyState,
+		Edits:          workspaceChangeEditReceipts(changeSet),
 	}
 	data, err := json.Marshal(receipt)
 	if err != nil {
 		return "", fmt.Errorf("serialize workspace change receipt: %w", err)
 	}
 	return string(data), nil
+}
+
+// workspaceChangeReceiptMaxEdits bounds the per-edit line metadata in a tool
+// receipt. Line hints exist to let the model chain a handful of edits without
+// re-reading; very large batches must re-read anyway, and the receipt has to
+// stay small no matter how many edits one call carries.
+const workspaceChangeReceiptMaxEdits = 20
+
+// workspaceChangeEditReceipts projects each applied edit's hunks into compact
+// before/after line ranges so the model can shift line numbers for chained
+// edits without re-reading the file. Entries beyond
+// workspaceChangeReceiptMaxEdits are dropped to keep the receipt bounded.
+func workspaceChangeEditReceipts(changeSet workspacechange.ChangeSet) []workspaceChangeEditReceipt {
+	if len(changeSet.Edits) == 0 || len(changeSet.Edits) > workspaceChangeReceiptMaxEdits {
+		return nil
+	}
+	receipts := make([]workspaceChangeEditReceipt, 0, len(changeSet.Edits))
+	for _, edit := range changeSet.Edits {
+		if len(edit.Hunks) == 0 {
+			continue
+		}
+		hunks := make([]workspaceChangeHunkReceipt, 0, len(edit.Hunks))
+		for _, hunk := range edit.Hunks {
+			if hunk.BeforeStartLine == 0 && hunk.BeforeEndLine == 0 && hunk.AfterStartLine == 0 && hunk.AfterEndLine == 0 {
+				continue
+			}
+			hunks = append(hunks, workspaceChangeHunkReceipt{
+				BeforeStartLine: hunk.BeforeStartLine,
+				BeforeEndLine:   hunk.BeforeEndLine,
+				AfterStartLine:  hunk.AfterStartLine,
+				AfterEndLine:    hunk.AfterEndLine,
+			})
+		}
+		if len(hunks) == 0 {
+			continue
+		}
+		receipts = append(receipts, workspaceChangeEditReceipt{
+			ID:           edit.ID,
+			Replacements: len(edit.Hunks),
+			Hunks:        hunks,
+		})
+	}
+	if len(receipts) == 0 {
+		return nil
+	}
+	return receipts
 }
 
 func workspaceChangeReceiptStatus(changeSet workspacechange.ChangeSet) string {
@@ -289,7 +324,7 @@ func formatWorkspaceChangeToolError(toolName string, err error) (string, bool) {
 
 func workspaceChangeToolPublicErrorMessage(changeErr *workspacechange.Error) string {
 	if changeErr != nil && changeErr.Code == workspacechange.ErrorCodeRevisionConflict {
-		return "Workspace file changed during the tool call; retry the operation. / 工具调用期间文件发生变化，请重试。"
+		return "Workspace file changed after your read or during the call (possibly by your own earlier edit). Re-read the file and rebuild the edit from current numbered output, then copy the revision from that newest read_file result. Do not reuse a file_revision value from an earlier attempt or an older context snapshot. / 文件在读取后或调用期间发生了变化（可能是你自己之前的修改）。请重新读取文件并按最新带行号内容重建修改，然后使用这次最新 read_file 结果里的 revision；不要复用之前尝试或旧上下文快照里的 file_revision。"
 	}
 	if changeErr == nil {
 		return ""
@@ -333,4 +368,22 @@ func workspaceChangeErrorRetryable(code string) bool {
 	default:
 		return false
 	}
+}
+
+// workspaceChangeErrorDiagnostics 提取 workspacechange.Error 的错误码与乐观并发
+// 冲突细节（模型提交的 expected_revision 与磁盘当前 actual_revision）。
+// 仅用于失败日志排查 revision 冲突，不会进入模型可见的工具结果。
+func workspaceChangeErrorDiagnostics(err error) (code, expectedRevision, actualRevision string) {
+	var changeErr *workspacechange.Error
+	if !errors.As(err, &changeErr) || changeErr == nil {
+		return "", "", ""
+	}
+	code = changeErr.Code
+	if details := changeErr.Details; details != nil {
+		expected, _ := details["expected_revision"].(string)
+		actual, _ := details["actual_revision"].(string)
+		expectedRevision = strings.TrimSpace(expected)
+		actualRevision = strings.TrimSpace(actual)
+	}
+	return code, expectedRevision, actualRevision
 }

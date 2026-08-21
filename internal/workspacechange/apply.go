@@ -12,6 +12,7 @@ import (
 
 type plannedSpan struct {
 	editIndex  int
+	hunkIndex  int
 	start      int
 	end        int
 	afterStart int
@@ -24,7 +25,11 @@ type sourceLineSpan struct {
 }
 
 // ApplyEdits validates every edit against one immutable base snapshot and
-// commits the resulting file exactly once.
+// commits the resulting file exactly once. An empty BaseRevision is accepted
+// only when every edit is exact-match: the edit's old_string is then its own
+// freshness anchor, and the service resolves the base from the current file
+// state under the mutation lock. Line-based edits always require an explicit
+// revision because stale line numbers cannot be detected from the edit itself.
 func (s *Service) ApplyEdits(ctx context.Context, req ApplyEditsRequest) (ChangeSet, error) {
 	if s == nil {
 		return ChangeSet{}, newError(ErrorCodeConflict, "change service is nil", nil)
@@ -41,15 +46,18 @@ func (s *Service) ApplyEdits(ctx context.Context, req ApplyEditsRequest) (Change
 	if err != nil {
 		return ChangeSet{}, err
 	}
-	expectedRevision, err := requireBaseRevision(rel, req.BaseRevision)
-	if err != nil {
-		return ChangeSet{}, err
-	}
 	before, err := s.readVisibleFile(rel)
 	if err != nil {
 		return ChangeSet{}, err
 	}
 	baseRevision := Revision(before)
+	expectedRevision := strings.TrimSpace(req.BaseRevision)
+	if expectedRevision == "" {
+		if err := requireBaseRevisionForEdits(rel, req.Edits); err != nil {
+			return ChangeSet{}, err
+		}
+		expectedRevision = baseRevision
+	}
 	if err := requireRevision(rel, expectedRevision, baseRevision); err != nil {
 		return ChangeSet{}, err
 	}
@@ -66,7 +74,10 @@ func (s *Service) ApplyEdits(ctx context.Context, req ApplyEditsRequest) (Change
 }
 
 // ReplaceFile records a full-file replacement through the same journal used by
-// batch edits. It also supports creating a previously missing visible file.
+// batch edits. It also supports creating a previously missing visible file. An
+// empty BaseRevision resolves against the current file state under the mutation
+// lock, which matches the intent of callers that never read the file (for
+// example write_file).
 func (s *Service) ReplaceFile(ctx context.Context, req ReplaceFileRequest) (ChangeSet, error) {
 	if s == nil {
 		return ChangeSet{}, newError(ErrorCodeConflict, "change service is nil", nil)
@@ -83,10 +94,6 @@ func (s *Service) ReplaceFile(ctx context.Context, req ReplaceFileRequest) (Chan
 	if err != nil {
 		return ChangeSet{}, err
 	}
-	expectedRevision, err := requireBaseRevision(rel, req.BaseRevision)
-	if err != nil {
-		return ChangeSet{}, err
-	}
 	before, readErr := s.readVisibleFile(rel)
 	beforeExists := readErr == nil
 	if readErr != nil {
@@ -99,6 +106,10 @@ func (s *Service) ReplaceFile(ctx context.Context, req ReplaceFileRequest) (Chan
 	actualRevision := "missing"
 	if beforeExists {
 		actualRevision = Revision(before)
+	}
+	expectedRevision := strings.TrimSpace(req.BaseRevision)
+	if expectedRevision == "" {
+		expectedRevision = actualRevision
 	}
 	if err := requireRevision(rel, expectedRevision, actualRevision); err != nil {
 		return ChangeSet{}, err
@@ -113,17 +124,28 @@ func (s *Service) ReplaceFile(ctx context.Context, req ReplaceFileRequest) (Chan
 		reviewStatus = ReviewStatusAccepted
 	}
 	editID := newID("edit")
+	afterLines := buildLineIndex(string(after))
+	afterFirst, afterLast := afterLines.rangeLines(0, len(after))
+	beforeFirst, beforeLast := 0, 0
+	if beforeExists {
+		beforeLines := buildLineIndex(string(before))
+		beforeFirst, beforeLast = beforeLines.rangeLines(0, len(before))
+	}
 	edits := []AppliedEdit{{
 		ID:           editID,
 		OldString:    string(before),
 		NewString:    req.Content,
 		ReviewStatus: reviewStatus,
 		Hunks: []Hunk{{
-			ID:          newID("hunk"),
-			BeforeStart: 0,
-			BeforeEnd:   len(before),
-			AfterStart:  0,
-			AfterEnd:    len(after),
+			ID:              newID("hunk"),
+			BeforeStart:     0,
+			BeforeEnd:       len(before),
+			AfterStart:      0,
+			AfterEnd:        len(after),
+			BeforeStartLine: beforeFirst,
+			BeforeEndLine:   beforeLast,
+			AfterStartLine:  afterFirst,
+			AfterEndLine:    afterLast,
 		}},
 	}}
 	change := newChangeSet(rel, before, after, beforeExists, true, edits, metadata)
@@ -133,6 +155,8 @@ func (s *Service) ReplaceFile(ctx context.Context, req ReplaceFileRequest) (Chan
 	return cloneChangeSet(change), nil
 }
 
+// requireBaseRevision enforces an explicit revision for callers whose edits
+// carry no self-validating anchor (editor saves).
 func requireBaseRevision(path, expected string) (string, error) {
 	expected = strings.TrimSpace(expected)
 	if expected == "" {
@@ -143,6 +167,65 @@ func requireBaseRevision(path, expected string) (string, error) {
 		})
 	}
 	return expected, nil
+}
+
+// requireBaseRevisionForEdits rejects an empty revision only when a line-based
+// edit needs it to reject stale line numbers.
+func requireBaseRevisionForEdits(path string, edits []TextEdit) error {
+	for _, edit := range edits {
+		if edit.StartLine != 0 || edit.EndLine != 0 {
+			return newError(ErrorCodeInvalidEdit, "base_revision is required for line-based edits", map[string]any{
+				"path":              path,
+				"field":             "base_revision",
+				"workspace_mutated": false,
+			})
+		}
+	}
+	return nil
+}
+
+// lineIndex maps byte offsets to 1-based line numbers through the sorted
+// newline positions of one snapshot. It exists so hunk line metadata costs one
+// linear scan per file instead of one scan per hunk.
+type lineIndex struct {
+	newlines []int
+}
+
+func buildLineIndex(content string) lineIndex {
+	newlines := make([]int, 0, strings.Count(content, "\n"))
+	for index := 0; index < len(content); index++ {
+		if content[index] == '\n' {
+			newlines = append(newlines, index)
+		}
+	}
+	return lineIndex{newlines: newlines}
+}
+
+// lineBefore returns the 1-based line containing the byte offset. An offset at
+// the very end of the file resolves to the line a trailing insertion joins: the
+// last real line when the file does not end with a newline, or the phantom next
+// line when it does.
+func (idx lineIndex) lineBefore(offset int) int {
+	return 1 + sort.SearchInts(idx.newlines, offset)
+}
+
+// rangeLines converts the byte range [start, end) into an inclusive 1-based
+// line span. An empty range reports the single line at the insertion point.
+func (idx lineIndex) rangeLines(start, end int) (first, last int) {
+	first = idx.lineBefore(start)
+	if end <= start {
+		return first, first
+	}
+	last = idx.lineBefore(end)
+	// lineBefore(end) counts a newline at end-1 as opening a following line;
+	// when the range ends exactly on that newline it belongs to `last`.
+	if index := sort.SearchInts(idx.newlines, end-1); index < len(idx.newlines) && idx.newlines[index] == end-1 {
+		last--
+	}
+	if last < first {
+		last = first
+	}
+	return first, last
 }
 
 func requireRevision(path, expected, actual string) error {
@@ -290,11 +373,28 @@ func planTextEdits(path, base string, requested []TextEdit, autoAccept bool) (st
 			AfterStart:  span.afterStart,
 			AfterEnd:    span.afterEnd,
 		})
+		span.hunkIndex = len(applied[span.editIndex].Hunks) - 1
 	}
-	result := base
-	for index := len(spans) - 1; index >= 0; index-- {
+	var builder strings.Builder
+	builder.Grow(len(base) + delta)
+	cursor := 0
+	beforeLines := buildLineIndex(base)
+	for index := range spans {
 		span := spans[index]
-		result = result[:span.start] + applied[span.editIndex].NewString + result[span.end:]
+		builder.WriteString(base[cursor:span.start])
+		builder.WriteString(applied[span.editIndex].NewString)
+		cursor = span.end
+	}
+	builder.WriteString(base[cursor:])
+	result := builder.String()
+	// Attach 1-based line positions so tool receipts can tell the model where
+	// each edit landed without a re-read; one pass over both snapshots.
+	afterLines := buildLineIndex(result)
+	for index := range spans {
+		span := spans[index]
+		hunk := &applied[span.editIndex].Hunks[span.hunkIndex]
+		hunk.BeforeStartLine, hunk.BeforeEndLine = beforeLines.rangeLines(span.start, span.end)
+		hunk.AfterStartLine, hunk.AfterEndLine = afterLines.rangeLines(span.afterStart, span.afterEnd)
 	}
 	return result, applied, nil
 }

@@ -290,10 +290,11 @@ func (s *ChatAppService) StartTaskWithError(ctx context.Context, req agent.ChatR
 			runtimeContexts.Stable,
 			runtimeContexts.DynamicTitle,
 			runtimeContexts.Dynamic,
-			// Keep unchanged read_file bodies verbatim across turns so the writing
-			// agent need not re-read stable chapters; changed files fall back to a
-			// receipt that forces a targeted re-read.
-			agent.WithRevisionResolver(agent.NewWorkspaceRevisionResolver(runtime.workspace)),
+			// Keep read_file bodies usable across turns: unchanged files stay
+			// verbatim, and files that changed (usually via the model's own
+			// edits) are refreshed to their current window so the next turn can
+			// keep editing by line without re-reading.
+			agent.WithRevisionResolver(agent.NewWorkspaceFileResolver(runtime.workspace)),
 		)
 		var onUserMessageCommitted func(context.Context) error
 		if !req.ResolvedReviewFeedback.Empty() {

@@ -189,12 +189,14 @@ const systemInstructionBody = `你是 Denova，一个专业的 AI 小说创作�
 - write_lore_items：批量创建或更新资料库条目；只用于角色身份、人设、长期关系、能力体系、世界规则、地点、势力和物品等稳定设定变化。每章后的当前位置、伤势、心理、目标、持有物等当前状态应写入 setting/character-states.md，不要默认写入资料库。只有作者明确要求删除时才传 delete_ids。写入时每个条目都要给出完整字段、brief_description 简介和正文，避免丢失已有设定。
 - write_file：创建或覆盖整个文件（适合新建文件或全量重写）；工具会自行判断文件是否存在并保护调用时的当前快照
 - edit_file：在单个文件中批量执行按行或精确替换（参数：file_path, file_revision 可选, edits）；工具会自行获取并保护调用时的当前快照
-  - 优先按 read_file 返回的行号修改：把 read_file 元数据中的 revision 传为 file_revision，每项传 start_line、end_line（包含结束行，可省略表示单行）和 new_string；按行模式替换完整源文件行，保留原文件换行符风格，new_string 为空表示删除所选行
-  - 只有行号不适合定位时才使用 old_string、new_string、replace_all；old_string 必须与目标文件最新实际内容逐字匹配，不要凭记忆重新生成
-  - 同一次调用中的所有行号范围和 old_string 都基于修改前的同一份文件内容解析，各修改区间不得重叠；任一项失败时整批零写入
+  - 只要本轮上下文中已有带行号的 read_file 正文，就必须按行修改：把 read_file 元数据中的 revision 传为 file_revision，每项传 start_line、end_line（包含结束行，可省略表示单行）和 new_string；按行模式替换完整源文件行，保留原文件换行符风格，new_string 为空表示删除所选行
+  - 仅当修改无法用行范围表达时才使用 old_string、new_string、replace_all：修改发生在同一行内部（行内局部修改），或需要 replace_all 替换所有出现；old_string 必须从最新 read_file 结果逐字复制，禁止凭记忆重建
   - 如果需要替换某项所有出现的相同文本，使用 old_string 模式并设置 replace_all=true
+  - 同一次调用中的所有行号范围和 old_string 都基于修改前的同一份文件内容解析，各修改区间不得重叠；任一项失败时整批零写入
   - 同一文件的多个改动点应合并到一次 edit_file；不同文件的独立改动可以在同一轮分别调用，存在依赖的改动必须等待上一轮结果
-  - 如果返回行号越界、old_string 未找到/不唯一或 revision 冲突，重新 read_file 后按最新行号重建 edits；不得因为局部修改失败就改用 write_file 覆盖已有章节
+  - edit_file / write_file 成功后会返回文件的新 revision；继续修改同一文件时直接把它作为 file_revision 传入，无需重新 read_file，行号按你自己的修改自行推算；无法可靠推算当前行号（文件在本轮修改之外发生变化、或返回 revision 冲突）时才重新 read_file 并复制新 revision，不得沿用之前的 file_revision
+  - 之前轮次读过的文件，上下文装配会自动保持其正文为当前状态（被改动过的文件会带 refreshed 标记返回当前内容与行号）；上下文中已有带行号的 read_file 正文时就直接把它当作当前快照使用，禁止为了"确认最新状态"而重复 read_file
+  - 如果只是行号越界或 old_string 未找到/不唯一，而上下文中的带行号正文仍是当前的，直接从该正文修正行号或逐字复制 old_string 后重试，不要因此重新 read_file；只有 revision 冲突（文件在你读取后被外部改动）或上下文缺少当前正文时才重新 read_file 并使用新读到的 revision；不得因为局部修改失败就改用 write_file 覆盖已有章节
 - 写作 workspace 中可见文件的创建和修改必须使用 write_file/edit_file，以便生成可审阅、可评论和可撤销的变更记录；不要通过 Shell 命令绕过文件工具修改作品正文或设定文件
 
 ## 作品工作目录

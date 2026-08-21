@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/cloudwego/eino/adk/filesystem"
 	"github.com/cloudwego/eino/components/tool"
@@ -36,12 +39,14 @@ var workspaceReadFileToolDescription = fmt.Sprintf(`Read a text file and return 
 - By default this tool reads up to %d lines from line 1. Use offset and limit to continue reading later sections.
 - The first result line is JSON pagination metadata.
 - Every selected source line after the metadata is returned in cat -n format with its stable 1-based line number. To edit by line, pass these numbers as edit_file start_line/end_line and copy the metadata revision to edit_file file_revision.
+- When earlier turns already read a file, cross-turn context assembly keeps that body current for you: an unchanged file keeps its body verbatim, and a file that changed since the read (for example by your own edit_file / write_file) comes back with metadata "refreshed": true and its CURRENT content, line numbers, and revision. Treat any read_file body in your context — especially a refreshed one — as the authoritative current snapshot: edit by line from it directly and do not re-read the file to "make sure".
 
 读取文本文件，返回有界的带行号选段。
 - file_path 必须是绝对路径。
 - 默认从第 1 行开始最多读取 %d 行；需要继续读取后续部分时使用 offset 和 limit。
 - 返回结果第一行是 JSON 分页元数据。
-- 元数据后的每一条源文件行都使用 cat -n 格式展示稳定的 1-based 行号；按行修改时，将这些行号作为 edit_file 的 start_line/end_line，并把元数据中的 revision 传入 edit_file 的 file_revision。`, agentFileReadDefaultLimitLines, agentFileReadDefaultLimitLines)
+- 元数据后的每一条源文件行都使用 cat -n 格式展示稳定的 1-based 行号；按行修改时，将这些行号作为 edit_file 的 start_line/end_line，并把元数据中的 revision 传入 edit_file 的 file_revision。
+- 此前轮次读过的文件，跨轮上下文装配会自动为你保持其正文为当前状态：未变化的文件保留原正文；读取后发生变化的文件（例如被你自己的 edit_file / write_file 修改）会带元数据 "refreshed": true 返回当前内容、行号与 revision。把你上下文中的任何 read_file 正文（尤其是 refreshed 的）当作权威的当前快照：直接按它的行号编辑，不要为了"确认一下"而重新读取。`, agentFileReadDefaultLimitLines, agentFileReadDefaultLimitLines)
 
 type workspaceReadFileInput struct {
 	FilePath string `json:"file_path" jsonschema:"required,description=Absolute path of the text file to read"`
@@ -60,6 +65,14 @@ type workspaceReadFileMetadata struct {
 	// receipt and force a targeted re-read). Empty when the file exceeds
 	// workspaceReadFileRevisionMaxBytes or its revision cannot be computed.
 	Revision string `json:"revision,omitempty"`
+	// Refreshed marks a body that cross-turn assembly has rewritten to the
+	// file's CURRENT content (same offset/limit window) because the file
+	// changed after the original read — typically through the model's own
+	// edit_file / write_file calls. A refreshed body's line numbers and
+	// revision are current at the start of the turn, so the model can keep
+	// editing by line without re-reading. It is never set by the read_file
+	// tool itself.
+	Refreshed bool `json:"refreshed,omitempty"`
 }
 
 // workspaceFileSelectionReader lets the production backend keep reads rooted
@@ -228,55 +241,163 @@ func resolveWorkspaceReadPath(workspace, input string) (absolute, relative strin
 }
 
 // workspaceFileRevision returns the full-file content revision anchor used for
-// cross-turn retention. It reads the whole file through the same rooted path
-// resolution as read_file so the anchor and the assembly-time resolver hash an
-// identical byte source. Any error, or a file above the revision cap, yields an
-// empty string so callers fall back to the compact receipt rather than a wrong
-// or missing-file anchor.
+// cross-turn retention. Results are memoized per resolved path and validated
+// against the file's current (size, mtime), so unchanged files skip both the
+// full read and the hash. A stale hit can only happen when an external writer
+// rewrites a file to the exact same size within one filesystem timestamp tick;
+// every mutation still re-validates against freshly hashed bytes inside
+// workspacechange, so the anchor is advisory and self-healing.
 func workspaceFileRevision(workspace, filePath string) string {
-	content, ok := readWorkspaceFullFile(workspace, filePath)
+	absolute, rel, err := resolveWorkspaceReadPath(workspace, filePath)
+	if err != nil {
+		return ""
+	}
+	if revision, ok := cachedWorkspaceFileRevision(absolute); ok {
+		return revision
+	}
+	_, revision, ok := readWorkspaceFullFile(workspace, absolute, rel)
 	if !ok {
 		return ""
 	}
-	return workspacechange.Revision(content)
+	return revision
 }
 
-// NewWorkspaceRevisionResolver returns a revision resolver bound to a workspace
-// for keeping unchanged read_file bodies verbatim across turns. It hashes the
-// exact same rooted full-file bytes as the read-time anchor, so an unchanged
-// file resolves to the identical revision. Results are memoized per resolver so
-// one assembly pass reads each path at most once.
+// workspaceRevisionAnchor is a stat-validated (size, mtime) -> revision entry
+// for one resolved absolute path.
+type workspaceRevisionAnchor struct {
+	size     int64
+	modTime  time.Time
+	revision string
+}
+
+var workspaceRevisionAnchors sync.Map // string -> workspaceRevisionAnchor
+
+// cachedWorkspaceFileRevision resolves a revision through stat alone. It must
+// only be consulted for advisory anchors, never as a substitute for the fresh
+// byte-level validation inside workspacechange.
+func cachedWorkspaceFileRevision(absolute string) (string, bool) {
+	cached, ok := workspaceRevisionAnchors.Load(absolute)
+	if !ok {
+		return "", false
+	}
+	anchor := cached.(workspaceRevisionAnchor)
+	info, err := os.Stat(absolute)
+	if err != nil || !info.Mode().IsRegular() || info.Size() != anchor.size || !info.ModTime().Equal(anchor.modTime) {
+		return "", false
+	}
+	return anchor.revision, true
+}
+
+// rememberWorkspaceFileRevision seeds the anchor cache after a mutation whose
+// resulting revision is already known (for example a successful edit_file).
+// Seeding keeps the next read_file metadata line and the per-turn context
+// assembly resolver cheap without re-reading the freshly written bytes. The
+// path may be workspace-relative (as in change receipts) and is resolved to
+// the same canonical key the read-side anchor uses.
+func rememberWorkspaceFileRevision(workspace, path, revision string) {
+	revision = strings.TrimSpace(revision)
+	path = strings.TrimSpace(path)
+	if revision == "" || path == "" {
+		return
+	}
+	absolute := path
+	if !filepath.IsAbs(absolute) {
+		absolute = filepath.Join(workspace, absolute)
+	}
+	absolute, _, err := resolveWorkspaceReadPath(workspace, absolute)
+	if err != nil {
+		return
+	}
+	info, err := os.Stat(absolute)
+	if err != nil || !info.Mode().IsRegular() {
+		return
+	}
+	workspaceRevisionAnchors.Store(absolute, workspaceRevisionAnchor{
+		size:     info.Size(),
+		modTime:  info.ModTime(),
+		revision: revision,
+	})
+}
+
+// ToolResultFileView carries one file window's current content plus the
+// full-file revision, used to refresh stale read_file bodies at assembly time.
+type ToolResultFileView struct {
+	Content  string
+	Revision string
+}
+
+// ToolResultWindowResolver selects the current content of one offset/limit
+// window plus the full-file revision. ok is false when the file is missing,
+// unreadable, oversized, or the window is empty.
+type ToolResultWindowResolver func(path string, offset, limit int) (ToolResultFileView, bool)
+
+// NewWorkspaceRevisionResolver returns a stat-backed revision resolver bound to
+// a workspace for keeping unchanged read_file bodies verbatim across turns. It
+// hashes the exact same rooted full-file bytes as the read-time anchor, so an
+// unchanged file resolves to the identical revision. The stat-validated anchor
+// cache makes repeated resolution of untouched files nearly free.
 func NewWorkspaceRevisionResolver(workspace string) ToolResultRevisionResolver {
-	cache := make(map[string]string)
 	return func(path string) (string, bool) {
-		path = strings.TrimSpace(path)
-		if path == "" {
-			return "", false
-		}
-		if cached, ok := cache[path]; ok {
-			return cached, cached != ""
-		}
 		revision := workspaceFileRevision(workspace, path)
-		cache[path] = revision
 		return revision, revision != ""
 	}
 }
 
-// readWorkspaceFullFile reads the entire file (bounded by
-// workspaceReadFileRevisionMaxBytes) via the workspace root when available. The
-// second return value is false when the file is missing, unreadable, or larger
-// than the cap. This is the single byte source shared by the read-time anchor
-// and the assembly-time revision resolver.
-func readWorkspaceFullFile(workspace, filePath string) ([]byte, bool) {
-	absolute, rel, err := resolveWorkspaceReadPath(workspace, filePath)
-	if err != nil {
-		return nil, false
+// NewWorkspaceFileResolver bundles the stat-backed revision resolver with the
+// window resolver so cross-turn assembly can both keep unchanged read_file
+// bodies verbatim and refresh stale ones (typically changed by the model's own
+// edits) to the file's current content.
+func NewWorkspaceFileResolver(workspace string) ToolResultFileResolver {
+	return ToolResultFileResolver{
+		Revision: NewWorkspaceRevisionResolver(workspace),
+		Window:   NewWorkspaceWindowResolver(workspace),
 	}
+}
+
+// NewWorkspaceWindowResolver returns the window resolver used to REFRESH a
+// stale read_file body to the file's current content at assembly time. It
+// reads the full file once (bounded by the revision cap), re-hashes it, seeds
+// the anchor cache, and selects the same offset/limit window the original
+// read returned, so line numbers stay comparable across the refresh.
+func NewWorkspaceWindowResolver(workspace string) ToolResultWindowResolver {
+	return func(path string, offset, limit int) (ToolResultFileView, bool) {
+		view, ok := workspaceFileWindowView(workspace, path, offset, limit)
+		return view, ok
+	}
+}
+
+// workspaceFileWindowView is the shared implementation behind
+// NewWorkspaceWindowResolver: one bounded full read produces both the fresh
+// revision and the requested window.
+func workspaceFileWindowView(workspace, path string, offset, limit int) (ToolResultFileView, bool) {
+	absolute, rel, err := resolveWorkspaceReadPath(workspace, path)
+	if err != nil {
+		return ToolResultFileView{}, false
+	}
+	content, revision, ok := readWorkspaceFullFile(workspace, absolute, rel)
+	if !ok {
+		return ToolResultFileView{}, false
+	}
+	window, err := selectWorkspaceFileWindow(context.Background(), bytes.NewReader(content), offset, limit)
+	if err != nil || window == "" {
+		return ToolResultFileView{}, false
+	}
+	return ToolResultFileView{Content: window, Revision: revision}, true
+}
+
+// readWorkspaceFullFile reads the entire file (bounded by
+// workspaceReadFileRevisionMaxBytes) via the workspace root when available,
+// hashes it, and seeds the anchor cache. The final bool is false when the file
+// is missing, unreadable, or larger than the cap. This is the single byte
+// source shared by the read-time anchor and the assembly-time revision
+// resolver.
+func readWorkspaceFullFile(workspace, absolute, rel string) ([]byte, string, bool) {
 	var file *os.File
+	var err error
 	if strings.TrimSpace(workspace) != "" {
 		root, rootErr := os.OpenRoot(workspace)
 		if rootErr != nil {
-			return nil, false
+			return nil, "", false
 		}
 		defer root.Close()
 		file, err = root.Open(filepath.FromSlash(rel))
@@ -284,18 +405,24 @@ func readWorkspaceFullFile(workspace, filePath string) ([]byte, bool) {
 		file, err = os.Open(absolute)
 	}
 	if err != nil {
-		return nil, false
+		return nil, "", false
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil || info.IsDir() || info.Size() > workspaceReadFileRevisionMaxBytes {
-		return nil, false
+		return nil, "", false
 	}
 	content, err := io.ReadAll(io.LimitReader(file, workspaceReadFileRevisionMaxBytes+1))
 	if err != nil || len(content) > workspaceReadFileRevisionMaxBytes {
-		return nil, false
+		return nil, "", false
 	}
-	return content, true
+	revision := workspacechange.Revision(content)
+	workspaceRevisionAnchors.Store(absolute, workspaceRevisionAnchor{
+		size:     info.Size(),
+		modTime:  info.ModTime(),
+		revision: revision,
+	})
+	return content, revision, true
 }
 
 type contextFileReader struct {

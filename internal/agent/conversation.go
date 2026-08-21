@@ -78,7 +78,7 @@ type SessionConversation struct {
 	dynamicContextTitle   string
 	dynamicContext        string
 	userMessageReferences []session.UserMessageReference
-	revisionResolver      ToolResultRevisionResolver
+	fileResolver          ToolResultFileResolver
 }
 
 func (c *SessionConversation) SetUserMessageReferences(references []session.UserMessageReference) {
@@ -146,12 +146,13 @@ func WithSessionStableRuntimeContext(title, content string) SessionConversationO
 	}
 }
 
-// WithRevisionResolver supplies the current-revision lookup used to keep
-// unchanged read_file bodies verbatim across turns. Without it, retained
-// read_file results always collapse to receipts.
-func WithRevisionResolver(resolver ToolResultRevisionResolver) SessionConversationOption {
+// WithRevisionResolver supplies the freshness lookups used to keep read_file
+// bodies usable across turns: unchanged bodies stay verbatim, and changed ones
+// are refreshed to the file's current window when a window resolver is
+// provided. Without it, retained read_file results always collapse to receipts.
+func WithRevisionResolver(resolver ToolResultFileResolver) SessionConversationOption {
 	return func(c *SessionConversation) {
-		c.revisionResolver = resolver
+		c.fileResolver = resolver
 	}
 }
 
@@ -270,7 +271,7 @@ func (c *SessionConversation) modelMessages(agentMessage string) []*schema.Messa
 		history = append(history, NewContextCompactionSummaryMessage(compaction.Epoch, compaction.Summary))
 		history = append(history, tail...)
 	}
-	history = applyToolResultContextPolicyWithResolver(history, c.ToolResultContextPolicy(), c.revisionResolver)
+	history = applyToolResultContextPolicyWithResolver(history, c.ToolResultContextPolicy(), c.fileResolver)
 	if len(history) > 0 {
 		history[len(history)-1] = schema.UserMessage(agentMessage)
 	}

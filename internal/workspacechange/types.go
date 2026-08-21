@@ -108,6 +108,14 @@ type Hunk struct {
 	BeforeEnd   int    `json:"before_end"`
 	AfterStart  int    `json:"after_start"`
 	AfterEnd    int    `json:"after_end"`
+	// Optional 1-based inclusive line positions mirroring the byte ranges
+	// above. They are derived while the edit is planned and let callers (for
+	// example the edit_file tool receipt) recompute line numbers for chained
+	// edits without re-reading the file.
+	BeforeStartLine int `json:"before_start_line,omitempty"`
+	BeforeEndLine   int `json:"before_end_line,omitempty"`
+	AfterStartLine  int `json:"after_start_line,omitempty"`
+	AfterEndLine    int `json:"after_end_line,omitempty"`
 }
 
 type AppliedEdit struct {

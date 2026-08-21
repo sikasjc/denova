@@ -38,21 +38,22 @@ const (
 )
 
 type ledgerEvent struct {
-	Type          string            `json:"type"`
-	CreatedAt     time.Time         `json:"created_at"`
-	Metadata      *ChangeMetadata   `json:"metadata,omitempty"`
-	ChangeSet     *ChangeSet        `json:"change_set,omitempty"`
-	ChangeSetID   string            `json:"change_set_id,omitempty"`
-	GroupID       string            `json:"group_id,omitempty"`
-	EditStatuses  map[string]string `json:"edit_statuses,omitempty"`
-	ApplyState    string            `json:"apply_state,omitempty"`
-	Comment       *Comment          `json:"comment,omitempty"`
-	Comments      []Comment         `json:"comments,omitempty"`
-	HistoryState  string            `json:"history_state,omitempty"`
-	Operation     *durableOperation `json:"operation,omitempty"`
-	OperationID   string            `json:"operation_id,omitempty"`
-	OperationPath string            `json:"operation_path,omitempty"`
-	ConflictPaths []string          `json:"conflict_paths,omitempty"`
+	Type            string            `json:"type"`
+	CreatedAt       time.Time         `json:"created_at"`
+	Metadata        *ChangeMetadata   `json:"metadata,omitempty"`
+	ChangeSet       *ChangeSet        `json:"change_set,omitempty"`
+	ChangeSetID     string            `json:"change_set_id,omitempty"`
+	GroupID         string            `json:"group_id,omitempty"`
+	HistoryGroupIDs []string          `json:"history_group_ids,omitempty"`
+	EditStatuses    map[string]string `json:"edit_statuses,omitempty"`
+	ApplyState      string            `json:"apply_state,omitempty"`
+	Comment         *Comment          `json:"comment,omitempty"`
+	Comments        []Comment         `json:"comments,omitempty"`
+	HistoryState    string            `json:"history_state,omitempty"`
+	Operation       *durableOperation `json:"operation,omitempty"`
+	OperationID     string            `json:"operation_id,omitempty"`
+	OperationPath   string            `json:"operation_path,omitempty"`
+	ConflictPaths   []string          `json:"conflict_paths,omitempty"`
 }
 
 type eventStore struct {
@@ -61,6 +62,13 @@ type eventStore struct {
 	blobDir    string
 	durability *durabilityOps
 	root       *os.Root
+	blobRoot   *os.Root
+	// verifiedBlobs memoizes blob names whose on-disk content already passed a
+	// checksum verification in this process. Content-addressed names make the
+	// re-read redundant: once verified, the name is the digest, so repeated
+	// references (every edit's before-blob is usually the previous after-blob)
+	// skip a full read + hash + directory sync.
+	verifiedBlobs map[string]bool
 }
 
 func newEventStore(workspace string, durability *durabilityOps) (*eventStore, error) {
@@ -91,10 +99,11 @@ func newEventStore(workspace string, durability *durabilityOps) (*eventStore, er
 		return nil, newError(ErrorCodeConflict, "workspace change storage resolved outside the workspace", map[string]any{"path": blobDir})
 	}
 	store := &eventStore{
-		dir:        dir,
-		ledgerPath: filepath.Join(dir, "ledger.jsonl"),
-		blobDir:    blobDir,
-		durability: durability,
+		dir:           dir,
+		ledgerPath:    filepath.Join(dir, "ledger.jsonl"),
+		blobDir:       blobDir,
+		durability:    durability,
+		verifiedBlobs: map[string]bool{},
 	}
 	// Make the ledger inode and its directory entry durable before append ever
 	// relies on it. Later appends only extend this existing file.
@@ -141,24 +150,47 @@ func newEventStore(workspace string, durability *durabilityOps) (*eventStore, er
 		return nil, err
 	}
 	store.root = changesRoot
+	// Pin the blob directory for the store's lifetime. A cached root is immune
+	// to later symlink swaps of the directory entry, so the construction-time
+	// validation below stays authoritative for every later blob operation.
+	blobInfo, err := changesRoot.Lstat("blobs")
+	if err != nil {
+		_ = changesRoot.Close()
+		return nil, err
+	}
+	if blobInfo.Mode()&os.ModeSymlink != 0 || !blobInfo.IsDir() {
+		_ = changesRoot.Close()
+		return nil, newError(ErrorCodeConflict, "workspace change blob path is not a directory", map[string]any{"path": store.blobDir})
+	}
+	blobRoot, err := changesRoot.OpenRoot("blobs")
+	if err != nil {
+		_ = changesRoot.Close()
+		return nil, err
+	}
+	store.blobRoot = blobRoot
 	return store, nil
 }
 
 func (s *eventStore) close() {
-	if s != nil && s.root != nil {
+	if s == nil {
+		return
+	}
+	if s.blobRoot != nil {
+		_ = s.blobRoot.Close()
+	}
+	if s.root != nil {
 		_ = s.root.Close()
 	}
 }
 
 func (s *eventStore) openBlobRoot() (*os.Root, error) {
-	info, err := s.root.Lstat("blobs")
-	if err != nil {
-		return nil, err
+	if s == nil {
+		return nil, newError(ErrorCodeConflict, "workspace change blob storage is not available", nil)
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return nil, newError(ErrorCodeConflict, "workspace change blob path is not a directory", map[string]any{"path": s.blobDir})
+	if s.blobRoot == nil {
+		return nil, newError(ErrorCodeConflict, "workspace change blob storage is not available", map[string]any{"path": s.blobDir})
 	}
-	return s.root.OpenRoot("blobs")
+	return s.blobRoot, nil
 }
 
 func (s *eventStore) append(event ledgerEvent) error {
@@ -292,7 +324,9 @@ func (s *eventStore) writeBlob(content []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer blobRoot.Close()
+	if s.verifiedBlobs[name] {
+		return revision, nil
+	}
 	if info, statErr := blobRoot.Lstat(name); statErr == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 			return "", newError(ErrorCodeConflict, "workspace change blob path is not a regular file", map[string]any{"path": name})
@@ -304,6 +338,9 @@ func (s *eventStore) writeBlob(content []byte) (string, error) {
 		if Revision(existing) != revision {
 			return "", fmt.Errorf("workspace change blob checksum mismatch for %q", revision)
 		}
+		s.verifiedBlobs[name] = true
+		// A blob left behind by an interrupted earlier run may still lack a
+		// durable directory entry, so the first verification keeps syncing.
 		if err := s.durability.syncRootDir(blobRoot, "."); err != nil {
 			return "", err
 		}
@@ -350,6 +387,7 @@ func (s *eventStore) writeBlob(content []byte) (string, error) {
 	if err := s.durability.syncRootDir(blobRoot, "."); err != nil {
 		return "", err
 	}
+	s.verifiedBlobs[name] = true
 	return revision, nil
 }
 
@@ -362,7 +400,6 @@ func (s *eventStore) readBlob(reference string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer blobRoot.Close()
 	info, err := blobRoot.Lstat(name)
 	if err != nil {
 		return nil, err
@@ -374,8 +411,13 @@ func (s *eventStore) readBlob(reference string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if actual := Revision(content); actual != "sha256:"+name {
-		return nil, fmt.Errorf("workspace change blob checksum mismatch: reference=%q actual=%q", reference, actual)
+	// The content address was verified in this process already; skip the
+	// redundant hash of large manuscripts on repeated hydration.
+	if !s.verifiedBlobs[name] {
+		if actual := Revision(content); actual != "sha256:"+name {
+			return nil, fmt.Errorf("workspace change blob checksum mismatch: reference=%q actual=%q", reference, actual)
+		}
+		s.verifiedBlobs[name] = true
 	}
 	return content, nil
 }

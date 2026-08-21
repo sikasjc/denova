@@ -851,58 +851,55 @@ func TestConcurrentEditsFromOneRevisionHaveOneCASWinner(t *testing.T) {
 	}
 }
 
-func TestMutationsRequireBaseRevisionWithoutChangingWorkspace(t *testing.T) {
+func TestMutationsWithoutBaseRevisionAnchorOnContent(t *testing.T) {
 	service, path := newTestServiceWithFile(t, "draft")
-	tests := []struct {
-		name   string
-		mutate func() error
-	}{
-		{
-			name: "apply edits",
-			mutate: func() error {
-				_, err := service.ApplyEdits(context.Background(), ApplyEditsRequest{
-					Path: path, Edits: []TextEdit{{OldString: "draft", NewString: "agent"}},
-				})
-				return err
-			},
-		},
-		{
-			name: "replace file",
-			mutate: func() error {
-				_, err := service.ReplaceFile(context.Background(), ReplaceFileRequest{Path: path, Content: "agent"})
-				return err
-			},
-		},
-		{
-			name: "save file",
-			mutate: func() error {
-				_, err := service.SaveFile(context.Background(), path, "local", "")
-				return err
-			},
-		},
+	// Line-based edits cannot detect stale line numbers from the edit itself,
+	// so they keep requiring an explicit revision.
+	_, err := service.ApplyEdits(context.Background(), ApplyEditsRequest{
+		Path: path, Edits: []TextEdit{{StartLine: 1, NewString: "agent"}},
+	})
+	var typed *Error
+	if !errors.As(err, &typed) || typed.Code != ErrorCodeInvalidEdit {
+		t.Fatalf("line edit without revision error=%v, want %s", err, ErrorCodeInvalidEdit)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			err := test.mutate()
-			var typed *Error
-			if !errors.As(err, &typed) || typed.Code != ErrorCodeInvalidEdit {
-				t.Fatalf("error=%v, want %s", err, ErrorCodeInvalidEdit)
-			}
-			mutated, ok := typed.Details["workspace_mutated"].(bool)
-			if !ok || mutated {
-				t.Fatalf("workspace_mutated detail = %#v", typed.Details["workspace_mutated"])
-			}
-			if got := readTestFile(t, service.workspace, path); got != "draft" {
-				t.Fatalf("missing base revision mutated workspace: %q", got)
-			}
-		})
+	// Exact-match edits are anchored by old_string: an empty revision resolves
+	// the base from the current state, and a stale old_string still fails.
+	if _, err := service.ApplyEdits(context.Background(), ApplyEditsRequest{
+		Path: path, Edits: []TextEdit{{OldString: "missing", NewString: "agent"}},
+	}); err == nil {
+		t.Fatal("stale old_string must still be rejected without a base revision")
 	}
-	groups, err := service.ListGroups(context.Background(), ChangeFilter{})
-	if err != nil {
-		t.Fatal(err)
+	if _, err := service.ApplyEdits(context.Background(), ApplyEditsRequest{
+		Path: path, Edits: []TextEdit{{OldString: "draft", NewString: "agent"}},
+	}); err != nil {
+		t.Fatalf("exact edit without revision should apply against the current snapshot: %v", err)
 	}
-	if len(groups) != 0 {
-		t.Fatalf("missing base revision recorded history: %#v", groups)
+	if got := readTestFile(t, service.workspace, path); got != "agent" {
+		t.Fatalf("exact edit result = %q", got)
+	}
+	// A full replacement without a revision writes against the current state,
+	// matching write_file's intent of never having read the file.
+	if _, err := service.ReplaceFile(context.Background(), ReplaceFileRequest{Path: path, Content: "replaced"}); err != nil {
+		t.Fatalf("replace without revision should apply against the current state: %v", err)
+	}
+	if got := readTestFile(t, service.workspace, path); got != "replaced" {
+		t.Fatalf("replace result = %q", got)
+	}
+}
+
+func TestSaveFileWithoutBaseRevisionIsRejected(t *testing.T) {
+	service, path := newTestServiceWithFile(t, "draft")
+	_, err := service.SaveFile(context.Background(), path, "local", "")
+	var typed *Error
+	if !errors.As(err, &typed) || typed.Code != ErrorCodeInvalidEdit {
+		t.Fatalf("error=%v, want %s", err, ErrorCodeInvalidEdit)
+	}
+	mutated, ok := typed.Details["workspace_mutated"].(bool)
+	if !ok || mutated {
+		t.Fatalf("workspace_mutated detail = %#v", typed.Details["workspace_mutated"])
+	}
+	if got := readTestFile(t, service.workspace, path); got != "draft" {
+		t.Fatalf("missing base revision mutated workspace: %q", got)
 	}
 }
 

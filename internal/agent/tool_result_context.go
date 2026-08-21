@@ -16,9 +16,10 @@ type ToolResultContextPolicy struct {
 	AgentKind      string
 	Enabled        bool
 	MaxResultBytes int
-	// RetainedProseMaxBytes bounds the total bytes of unchanged read_file bodies
-	// kept verbatim across turns. 0 disables prose retention (read_file always
-	// collapses to a receipt at assembly time).
+	// RetainedProseMaxBytes bounds the total bytes of read_file bodies kept
+	// across turns, either verbatim (file unchanged) or refreshed to the
+	// current content (file changed). 0 disables prose retention (read_file
+	// always collapses to a receipt at assembly time).
 	RetainedProseMaxBytes int
 }
 
@@ -29,6 +30,18 @@ type ToolResultContextPolicy struct {
 // read_file body collapses to a receipt — preserving the pre-revision behavior
 // for the compaction source and non-IDE assembly paths.
 type ToolResultRevisionResolver func(path string) (string, bool)
+
+// ToolResultFileResolver bundles the lookups used to keep read_file bodies
+// usable across turns. Revision is the cheap stat-backed freshness check;
+// Window, when non-nil, re-reads the current content of one offset/limit
+// window so a body whose file changed can be REFRESHED in place instead of
+// collapsing to a "please re-read" receipt (the model's own edits are the most
+// common reason a body goes stale). A nil Window preserves the collapse-only
+// behavior.
+type ToolResultFileResolver struct {
+	Revision ToolResultRevisionResolver
+	Window   ToolResultWindowResolver
+}
 
 func resolveToolResultContextPolicy(cfg *config.Config, agentKind string) ToolResultContextPolicy {
 	settings := config.ResolveAgentContext(cfg, agentKind)
@@ -167,14 +180,16 @@ func recordTimeToolResultContent(toolName, content string, policy ToolResultCont
 }
 
 func applyToolResultContextPolicy(messages []*schema.Message, policy ToolResultContextPolicy) []*schema.Message {
-	return applyToolResultContextPolicyWithResolver(messages, policy, nil)
+	return applyToolResultContextPolicyWithResolver(messages, policy, ToolResultFileResolver{})
 }
 
-// applyToolResultContextPolicyWithResolver applies the retention policy and, when
-// a resolver is supplied, keeps unchanged read_file bodies verbatim up to the
-// policy budget. A nil resolver reproduces the pre-revision behavior: every
-// retained read_file body collapses to a receipt.
-func applyToolResultContextPolicyWithResolver(messages []*schema.Message, policy ToolResultContextPolicy, resolver ToolResultRevisionResolver) []*schema.Message {
+// applyToolResultContextPolicyWithResolver applies the retention policy and,
+// when a revision resolver is supplied, keeps read_file bodies usable across
+// turns up to the policy budget: unchanged bodies stay verbatim (cache-stable
+// prefix) and changed bodies are refreshed to the file's current window when a
+// window resolver is available. An empty resolver reproduces the pre-revision
+// behavior: every retained read_file body collapses to a receipt.
+func applyToolResultContextPolicyWithResolver(messages []*schema.Message, policy ToolResultContextPolicy, resolver ToolResultFileResolver) []*schema.Message {
 	if len(messages) == 0 {
 		return messages
 	}

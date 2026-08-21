@@ -132,6 +132,19 @@ func TestWorkspaceReadFileToolPreservesDefaultWindowSchema(t *testing.T) {
 			t.Fatalf("read_file schema is missing %s: %s", property, raw)
 		}
 	}
+	// The description must teach the refreshed-body contract so the model
+	// trusts cross-turn bodies instead of defensively re-reading.
+	for _, expected := range []string{
+		`"refreshed": true`,
+		"authoritative current snapshot",
+		"do not re-read the file to \"make sure\"",
+		"当作权威的当前快照",
+		"不要为了\"确认一下\"而重新读取",
+	} {
+		if !strings.Contains(workspaceReadFileToolDescription, expected) {
+			t.Fatalf("read_file description missing %q:\n%s", expected, workspaceReadFileToolDescription)
+		}
+	}
 }
 
 func TestWorkspaceEditFileUsesCurrentRevisionWithoutReadDependency(t *testing.T) {

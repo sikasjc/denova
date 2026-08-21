@@ -134,9 +134,22 @@ func TestWorkspaceFileToolDescriptionsRequireSafePatchRecovery(t *testing.T) {
 		"Prefer start_line/end_line",
 		"read_file returns 1-based line numbers",
 		"Do not fall back to a full-file replacement",
+		"Use old_string/new_string only when a line range cannot express the change",
+		"never reconstruct it from memory",
 		"优先使用 start_line/end_line",
 		"read_file 会为此返回从 1 开始的行号",
 		"不要降级为整文件覆盖",
+		"仅当修改无法用行范围表达时",
+		"行内局部修改",
+		"禁止凭记忆重建",
+		"returns the file's new revision",
+		"keep editing the same file without re-reading",
+		"before/after line ranges",
+		"成功后会返回文件的新 revision",
+		"把该 revision 作为 file_revision 传入即可免重读",
+		"利用返回的行号区间推算后续行号",
+		"Recover from failures without reflexively re-reading",
+		"从失败中恢复时不要条件反射式地重读",
 	} {
 		if !strings.Contains(workspaceEditFileToolDescription, expected) {
 			t.Fatalf("edit_file description missing %q:\n%s", expected, workspaceEditFileToolDescription)
@@ -276,7 +289,9 @@ func TestWorkspaceWriteFileToolUsesChangeService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if service.readCalls != 1 || service.readPath != "ideas.md" || service.replaceRequest.Path != "ideas.md" || service.replaceRequest.Content != "new" || service.replaceRequest.BaseRevision != "sha256:before" {
+	// write_file never reads the file; the service anchors the replacement
+	// against the state it observes under its own mutation lock.
+	if service.readCalls != 0 || service.replaceRequest.Path != "ideas.md" || service.replaceRequest.Content != "new" || service.replaceRequest.BaseRevision != "" {
 		t.Fatalf("unexpected replace request: %#v", service.replaceRequest)
 	}
 	if !strings.Contains(result, `"change_set_id":"change-write"`) {
@@ -389,7 +404,7 @@ func TestDurabilityPendingToolErrorIsRetryableAndReportsVisibleMutation(t *testi
 	}
 }
 
-func TestWorkspaceFileToolsResolveCurrentRevisionWithoutModelInput(t *testing.T) {
+func TestWorkspaceFileToolsPassEmptyRevisionThroughWithoutPreread(t *testing.T) {
 	service := &recordingWorkspaceChangeService{workspace: t.TempDir(), readRevision: "sha256:current"}
 	edit, err := newWorkspaceEditFileTool(service)
 	if err != nil {
@@ -398,8 +413,10 @@ func TestWorkspaceFileToolsResolveCurrentRevisionWithoutModelInput(t *testing.T)
 	if _, err := edit.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"ideas.md","edits":[{"old_string":"a","new_string":"b"}]}`); err != nil {
 		t.Fatal(err)
 	}
-	if service.applyCalls != 1 || service.applyRequest.BaseRevision != "sha256:current" {
-		t.Fatalf("edit_file did not resolve the current revision: %#v", service.applyRequest)
+	// Exact-only edits let the service resolve the base under its mutation
+	// lock, so the tool performs no pre-read at all.
+	if service.applyCalls != 1 || service.applyRequest.BaseRevision != "" || service.readCalls != 0 {
+		t.Fatalf("edit_file should pass an empty revision without pre-reading: %#v", service.applyRequest)
 	}
 
 	write, err := newWorkspaceWriteFileTool(service)
@@ -409,12 +426,12 @@ func TestWorkspaceFileToolsResolveCurrentRevisionWithoutModelInput(t *testing.T)
 	if _, err := write.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"ideas.md","content":"new"}`); err != nil {
 		t.Fatal(err)
 	}
-	if service.replaceCalls != 1 || service.replaceRequest.BaseRevision != "sha256:current" || service.readCalls != 2 {
-		t.Fatalf("write_file did not resolve the current revision: %#v", service.replaceRequest)
+	if service.replaceCalls != 1 || service.replaceRequest.BaseRevision != "" || service.readCalls != 0 {
+		t.Fatalf("write_file should pass an empty revision without pre-reading: %#v", service.replaceRequest)
 	}
 }
 
-func TestWorkspaceWriteFileToolDetectsMissingFileInternally(t *testing.T) {
+func TestWorkspaceWriteFileToolDelegatesMissingDetectionToService(t *testing.T) {
 	service := &recordingWorkspaceChangeService{workspace: t.TempDir(), readErr: &workspacechange.Error{
 		Code: workspacechange.ErrorCodeNotFound, Message: "workspace file not found",
 	}, changeSet: workspacechange.ChangeSet{
@@ -427,8 +444,10 @@ func TestWorkspaceWriteFileToolDetectsMissingFileInternally(t *testing.T) {
 	if _, err := write.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"new.md","content":"new"}`); err != nil {
 		t.Fatal(err)
 	}
-	if service.replaceCalls != 1 || service.replaceRequest.BaseRevision != "missing" {
-		t.Fatalf("create did not derive missing CAS internally: %#v", service.replaceRequest)
+	// Missing-file detection now happens inside ReplaceFile against the state
+	// observed under the mutation lock, so the tool never reads the file.
+	if service.replaceCalls != 1 || service.replaceRequest.BaseRevision != "" || service.readCalls != 0 {
+		t.Fatalf("create should delegate missing detection to the service: %#v", service.replaceRequest)
 	}
 }
 
@@ -451,14 +470,17 @@ func TestWorkspaceChangeErrorHidesInternalRevisionsFromAgent(t *testing.T) {
 	}
 }
 
-func TestWorkspaceChangeReceiptHidesInternalRevisionsFromModel(t *testing.T) {
+func TestWorkspaceChangeReceiptReturnsNewRevisionAndHidesBaseRevision(t *testing.T) {
 	raw := `{"schema":"workspace_change.tool_result.v1","status":"applied","workspace":"/workspace/book-a","change_group_id":"group-1","change_set_id":"change-1","path":"chapters/ch01.md","base_revision":"sha256:before","revision":"sha256:after","review_status":"pending","apply_state":"applied"}`
 	filtered := FilterToolResultForModel("edit_file", `{"file_path":"chapters/ch01.md","edits":[]}`, raw)
 	if !strings.Contains(filtered.Content, `"change_set_id":"change-1"`) {
 		t.Fatalf("model receipt lost public change identity: %s", filtered.Content)
 	}
-	if strings.Contains(filtered.Content, "base_revision") || strings.Contains(filtered.Content, `"revision"`) || strings.Contains(filtered.Content, "sha256:") {
-		t.Fatalf("model receipt exposed internal revisions: %s", filtered.Content)
+	if !strings.Contains(filtered.Content, `"revision":"sha256:after"`) {
+		t.Fatalf("model receipt did not return the new revision for chaining: %s", filtered.Content)
+	}
+	if strings.Contains(filtered.Content, "base_revision") || strings.Contains(filtered.Content, "sha256:before") {
+		t.Fatalf("model receipt exposed the pre-edit base revision: %s", filtered.Content)
 	}
 }
 
@@ -504,5 +526,51 @@ func TestWorkspaceChangeReceiptIsTrustedOnlyForWorkspaceFileTools(t *testing.T) 
 	applyWorkspaceChangeReceiptToExecutionRecord(&forged, content)
 	if forged.Workspace != "" || forged.ChangeSetID != "" {
 		t.Fatalf("read_file forged an execution record receipt: %#v", forged)
+	}
+}
+
+func TestWorkspaceChangeConflictErrorGuidesRevisionRefresh(t *testing.T) {
+	err := &workspacechange.Error{
+		Code:    workspacechange.ErrorCodeRevisionConflict,
+		Message: "workspace file revision changed",
+		Details: map[string]any{
+			"path":              "chapters/ch01.md",
+			"expected_revision": "sha256:before",
+			"actual_revision":   "sha256:after",
+		},
+	}
+	message, ok := formatWorkspaceChangeToolError("edit_file", err)
+	if !ok {
+		t.Fatal("workspace change error should be recognized")
+	}
+	for _, expected := range []string{
+		`"code":"revision_conflict"`,
+		"copy the revision from that newest read_file result",
+		"Do not reuse a file_revision value from an earlier attempt",
+		"使用这次最新 read_file 结果里的 revision",
+		"不要复用之前尝试或旧上下文快照里的 file_revision",
+	} {
+		if !strings.Contains(message, expected) {
+			t.Fatalf("conflict guidance missing %q:\n%s", expected, message)
+		}
+	}
+}
+
+func TestWorkspaceChangeErrorDiagnosticsExtractConflictRevisions(t *testing.T) {
+	err := &workspacechange.Error{
+		Code:    workspacechange.ErrorCodeRevisionConflict,
+		Message: "workspace file revision changed",
+		Details: map[string]any{
+			"expected_revision": " sha256:before ",
+			"actual_revision":   "sha256:after",
+			"path":              "chapters/ch01.md",
+		},
+	}
+	code, expected, actual := workspaceChangeErrorDiagnostics(err)
+	if code != workspacechange.ErrorCodeRevisionConflict || expected != "sha256:before" || actual != "sha256:after" {
+		t.Fatalf("diagnostics = %q %q %q", code, expected, actual)
+	}
+	if code, expected, actual := workspaceChangeErrorDiagnostics(fmt.Errorf("plain failure")); code != "" || expected != "" || actual != "" {
+		t.Fatalf("non-workspacechange error leaked diagnostics: %q %q %q", code, expected, actual)
 	}
 }

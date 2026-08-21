@@ -288,31 +288,33 @@ func (s *Service) applyEvent(event ledgerEvent) error {
 			}
 		}
 		change.ReviewStatus = aggregateEditReviewStatus(change.Edits)
-		s.refreshGroup(change.GroupID)
+		s.syncGroupChange(change)
 	case eventChangeState:
 		change := s.changeSets[event.ChangeSetID]
 		if change == nil {
 			return fmt.Errorf("state target change %s not found", event.ChangeSetID)
 		}
 		change.ApplyState = event.ApplyState
-		s.refreshGroup(change.GroupID)
+		s.syncGroupChange(change)
 	case eventCommentUpserted:
 		if event.Comment == nil {
 			return errors.New("comment event is missing comment")
 		}
-		comment := *event.Comment
-		s.comments[comment.ID] = &comment
-		s.refreshGroup(comment.GroupID)
+		s.applyCommentUpsert(*event.Comment)
 	case eventCommentsUpserted:
 		if len(event.Comments) == 0 {
 			return errors.New("comments event is missing comments")
 		}
 		for i := range event.Comments {
-			comment := event.Comments[i]
-			s.comments[comment.ID] = &comment
-			s.refreshGroup(comment.GroupID)
+			s.applyCommentUpsert(event.Comments[i])
 		}
 	case eventHistoryState:
+		if len(event.HistoryGroupIDs) > 0 {
+			for _, groupID := range event.HistoryGroupIDs {
+				s.applyHistoryState(groupID, event.HistoryState)
+			}
+			return nil
+		}
 		s.applyHistoryState(event.GroupID, event.HistoryState)
 	case eventOperationPrepared:
 		if event.Operation == nil {
@@ -413,12 +415,12 @@ func (s *Service) applyOperationProjection(operation durableOperation) error {
 			}
 		}
 		change.ReviewStatus = aggregateEditReviewStatus(change.Edits)
-		s.refreshGroup(change.GroupID)
+		s.syncGroupChange(change)
 	}
 	for _, update := range operation.Projection.ChangeStates {
 		change := s.changeSets[update.ChangeSetID]
 		change.ApplyState = update.ApplyState
-		s.refreshGroup(change.GroupID)
+		s.syncGroupChange(change)
 	}
 	if operation.Projection.HistoryState != "" {
 		s.applyHistoryState(operation.GroupID, operation.Projection.HistoryState)
@@ -445,7 +447,7 @@ func (s *Service) applyOperationConflict(operation durableOperation) error {
 	for id := range targets {
 		change := s.changeSets[id]
 		change.ApplyState = ApplyStateConflicted
-		s.refreshGroup(change.GroupID)
+		s.syncGroupChange(change)
 	}
 	return nil
 }
@@ -490,35 +492,89 @@ func (s *Service) addProjectedChange(change ChangeSet, metadata ChangeMetadata) 
 	// the newer metadata field.
 	copy.ReviewThreadID = firstNonEmpty(group.ReviewThreadID, group.ID)
 	s.changeSets[copy.ID] = &copy
-	group.ChangeSets = append(group.ChangeSets, copy)
+	insertGroupChangeSorted(group, cloneChangeSet(copy))
 	s.refreshGroup(group.ID)
 }
 
+// insertGroupChangeSorted keeps group.ChangeSets ordered by sequence (ID as the
+// deterministic tiebreak). Incremental membership replaces the historical
+// full-table rebuild, so applying one event no longer rescans every change in
+// the workspace.
+func insertGroupChangeSorted(group *ChangeGroup, change ChangeSet) {
+	index := sort.Search(len(group.ChangeSets), func(i int) bool {
+		if group.ChangeSets[i].Sequence == change.Sequence {
+			return group.ChangeSets[i].ID > change.ID
+		}
+		return group.ChangeSets[i].Sequence > change.Sequence
+	})
+	group.ChangeSets = append(group.ChangeSets, ChangeSet{})
+	copy(group.ChangeSets[index+1:], group.ChangeSets[index:])
+	group.ChangeSets[index] = change
+}
+
+// syncGroupChange refreshes the group's snapshot of a change that was mutated
+// in place inside s.changeSets (review status or apply state transitions).
+func (s *Service) syncGroupChange(change *ChangeSet) {
+	if change == nil {
+		return
+	}
+	group := s.groups[change.GroupID]
+	if group == nil {
+		return
+	}
+	snapshot := cloneChangeSet(*change)
+	for index := range group.ChangeSets {
+		if group.ChangeSets[index].ID == change.ID {
+			group.ChangeSets[index] = snapshot
+			s.refreshGroup(group.ID)
+			return
+		}
+	}
+	// Defensive: a projected change must always belong to its group. Keep the
+	// membership invariant instead of silently dropping the update.
+	insertGroupChangeSorted(group, snapshot)
+	s.refreshGroup(group.ID)
+}
+
+// applyCommentUpsert maintains the per-group comment membership incrementally
+// (upsert in place, sorted insert by creation time) and refreshes aggregates.
+func (s *Service) applyCommentUpsert(comment Comment) {
+	s.comments[comment.ID] = &comment
+	group := s.groups[comment.GroupID]
+	if group == nil {
+		return
+	}
+	for index := range group.Comments {
+		if group.Comments[index].ID == comment.ID {
+			group.Comments[index] = comment
+			s.refreshGroup(group.ID)
+			return
+		}
+	}
+	index := sort.Search(len(group.Comments), func(i int) bool {
+		if group.Comments[i].CreatedAt.Equal(comment.CreatedAt) {
+			return group.Comments[i].ID > comment.ID
+		}
+		return group.Comments[i].CreatedAt.After(comment.CreatedAt)
+	})
+	group.Comments = append(group.Comments, Comment{})
+	copy(group.Comments[index+1:], group.Comments[index:])
+	group.Comments[index] = comment
+	s.refreshGroup(group.ID)
+}
+
+// refreshGroup recomputes one group's aggregates from its maintained
+// membership. It deliberately performs no file I/O: history capabilities
+// (CanUndo/CanRedo) validate the live workspace head and are computed at read
+// boundaries instead, so event application stays pure in-memory.
 func (s *Service) refreshGroup(groupID string) {
 	group := s.groups[groupID]
 	if group == nil {
 		return
 	}
 	group.ReviewThreadID = firstNonEmpty(group.ReviewThreadID, group.ID)
-	group.ChangeSets = group.ChangeSets[:0]
-	for _, change := range s.changeSets {
-		if change.GroupID == groupID {
-			group.ChangeSets = append(group.ChangeSets, cloneChangeSet(*change))
-		}
-	}
-	sort.SliceStable(group.ChangeSets, func(i, j int) bool {
-		return group.ChangeSets[i].Sequence < group.ChangeSets[j].Sequence
-	})
-	group.Comments = group.Comments[:0]
-	for _, comment := range s.comments {
-		if comment.GroupID == groupID {
-			group.Comments = append(group.Comments, *comment)
-		}
-	}
-	sort.SliceStable(group.Comments, func(i, j int) bool { return group.Comments[i].CreatedAt.Before(group.Comments[j].CreatedAt) })
 	group.ReviewStatus = aggregateChangeReviewStatus(group.ChangeSets)
 	group.ApplyState = aggregateChangeApplyState(group.ChangeSets)
-	group.CanUndo, group.CanRedo = s.liveHistoryCapabilities(group)
 	group.PendingEditCount = countPendingReviewEdits(group.ChangeSets)
 	group.CommentCount = countComments(group.Comments)
 }
@@ -547,19 +603,32 @@ func (s *Service) assignChangeSequence(change *ChangeSet) {
 	}
 }
 
+// invalidateRedoExcept records that a new non-history mutation moved the
+// workspace past every undone group, making their redo snapshots stale. All
+// invalidated groups are persisted as one ledger event: each fsynced append
+// holds the global mutation lock, so N separate events would serialize N disk
+// flushes for a single logical transition.
 func (s *Service) invalidateRedoExcept(origin string) error {
 	if origin == OriginRedo || origin == OriginUndo || origin == OriginReview {
 		return nil
 	}
+	invalidated := make([]string, 0)
 	for groupID, isUndone := range s.undone {
 		if !isUndone || s.redoInvalid[groupID] {
 			continue
 		}
-		if err := s.appendAndApply(ledgerEvent{Type: eventHistoryState, GroupID: groupID, HistoryState: historyStateRedoInvalidated}); err != nil {
-			return err
-		}
+		invalidated = append(invalidated, groupID)
 	}
-	return nil
+	if len(invalidated) == 0 {
+		return nil
+	}
+	sort.Strings(invalidated)
+	if len(invalidated) == 1 {
+		// Keep the single-group event shape so older readers of the ledger
+		// observe the transition they understand.
+		return s.appendAndApply(ledgerEvent{Type: eventHistoryState, GroupID: invalidated[0], HistoryState: historyStateRedoInvalidated})
+	}
+	return s.appendAndApply(ledgerEvent{Type: eventHistoryState, HistoryGroupIDs: invalidated, HistoryState: historyStateRedoInvalidated})
 }
 
 func cloneChangeSet(change ChangeSet) ChangeSet {

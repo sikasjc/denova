@@ -8,10 +8,12 @@ const (
 
 	AgentContextCompactionStrategySummaryAgent = "summary_agent"
 
-	// DefaultIDERetainedProseMaxBytes bounds how many bytes of unchanged read_file
-	// bodies the writing (IDE) agent keeps verbatim across turns before the oldest
-	// ones fall back to compact receipts. Kept above 128KB per the project rule
-	// that model-visible injections must have a generous hard cap.
+	// DefaultIDERetainedProseMaxBytes bounds how many bytes of read_file bodies
+	// the writing (IDE) agent keeps across turns before the oldest ones fall
+	// back to compact receipts. Unchanged bodies stay verbatim; bodies whose
+	// file changed (typically via the model's own edits) are refreshed to the
+	// current window. Kept above 128KB per the project rule that model-visible
+	// injections must have a generous hard cap.
 	DefaultIDERetainedProseMaxBytes = 256 * 1024
 	// MaxRetainedProseMaxBytes is the absolute clamp for the retained-prose budget
 	// so a misconfigured value cannot let a session's context grow without bound.
@@ -39,9 +41,10 @@ type AgentContextOverride struct {
 	CompactionRecentTurns      *int     `toml:"compaction_recent_turns,omitempty" json:"compaction_recent_turns,omitempty"`
 	CompactionTargetMin        *float64 `toml:"compaction_target_min_ratio,omitempty" json:"compaction_target_min_ratio,omitempty"`
 	CompactionTargetMax        *float64 `toml:"compaction_target_max_ratio,omitempty" json:"compaction_target_max_ratio,omitempty"`
-	ToolResultRetentionEnabled *bool `toml:"tool_result_retention_enabled,omitempty" json:"tool_result_retention_enabled,omitempty"`
-	// RetainedProseMaxBytes bounds the total bytes of unchanged read_file bodies
-	// kept verbatim across turns. nil uses the per-agent-kind default; 0 disables
+	ToolResultRetentionEnabled *bool    `toml:"tool_result_retention_enabled,omitempty" json:"tool_result_retention_enabled,omitempty"`
+	// RetainedProseMaxBytes bounds the total bytes of read_file bodies kept
+	// across turns, verbatim when unchanged or refreshed to the current window
+	// when the file changed. nil uses the per-agent-kind default; 0 disables
 	// prose retention entirely (read_file always collapses to a receipt).
 	RetainedProseMaxBytes *int `toml:"retained_prose_max_bytes,omitempty" json:"retained_prose_max_bytes,omitempty"`
 }

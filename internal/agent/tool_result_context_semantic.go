@@ -109,11 +109,8 @@ func retainedLoreReadReceipt(content string) string {
 }
 
 func retainedFileReadReceipt(content string) string {
-	firstLine, _, _ := strings.Cut(content, "\n")
-	var metadata workspaceReadFileMetadata
-	if json.Unmarshal([]byte(strings.TrimSpace(firstLine)), &metadata) != nil ||
-		metadata.Schema != workspaceReadFileResultSchema ||
-		strings.TrimSpace(metadata.FilePath) == "" {
+	metadata, ok := parseReadFileMetadata(content)
+	if !ok {
 		// Tool errors and results from an unknown read_file implementation must
 		// remain visible instead of being misrepresented as a successful read.
 		return content
@@ -124,9 +121,24 @@ func retainedFileReadReceipt(content string) string {
 		Path:     strings.TrimSpace(metadata.FilePath),
 		Offset:   metadata.Offset,
 		Limit:    metadata.Limit,
-		Note:     "The selected file body was available during the source turn and is omitted from cross-turn context. Re-read this path and window for current exact wording.",
+		Note:     "The selected file body was available during the source turn and is omitted from cross-turn context. Read this window again only when its exact wording is needed for the next step.",
 	}
 	return marshalRetainedToolReceipt(receipt)
+}
+
+// parseReadFileMetadata extracts the JSON metadata first line of a stored
+// read_file result. ok is false for tool errors or results from an unknown
+// read_file implementation.
+func parseReadFileMetadata(content string) (workspaceReadFileMetadata, bool) {
+	firstLine, _, _ := strings.Cut(content, "\n")
+	var metadata workspaceReadFileMetadata
+	if json.Unmarshal([]byte(strings.TrimSpace(firstLine)), &metadata) != nil ||
+		metadata.Schema != workspaceReadFileResultSchema ||
+		strings.TrimSpace(metadata.FilePath) == "" {
+		return workspaceReadFileMetadata{}, false
+	}
+	metadata.FilePath = strings.TrimSpace(metadata.FilePath)
+	return metadata, true
 }
 
 // parseReadFileAnchor extracts the full-file revision anchor and path from a
@@ -135,14 +147,11 @@ func retainedFileReadReceipt(content string) string {
 // exceeded the revision cap), in which case the body cannot be safely retained
 // verbatim across turns.
 func parseReadFileAnchor(content string) (revision, path string, ok bool) {
-	firstLine, _, _ := strings.Cut(content, "\n")
-	var metadata workspaceReadFileMetadata
-	if json.Unmarshal([]byte(strings.TrimSpace(firstLine)), &metadata) != nil ||
-		metadata.Schema != workspaceReadFileResultSchema ||
-		strings.TrimSpace(metadata.FilePath) == "" {
+	metadata, parsed := parseReadFileMetadata(content)
+	if !parsed {
 		return "", "", false
 	}
-	return strings.TrimSpace(metadata.Revision), strings.TrimSpace(metadata.FilePath), true
+	return strings.TrimSpace(metadata.Revision), metadata.FilePath, true
 }
 
 func retainedSkillReceipt(content string) string {
@@ -212,7 +221,7 @@ func semanticToolCallContextArguments(toolName, arguments string) string {
 		Path:           path,
 		OperationCount: operationCount,
 		ContentOmitted: true,
-		Note:           "The write body, patch, or Lore payload was available during the source turn and is omitted from cross-turn context. Re-read the current source of truth for authoritative content.",
+		Note:           "The write body, patch, or Lore payload was available during the source turn and is omitted from cross-turn context. The paired result receipt reports the new revision and line ranges; read the file only when its current content is actually needed.",
 	})
 	if err != nil {
 		return arguments
@@ -256,7 +265,7 @@ func appendUniqueRetainedValue(values []string, value string) []string {
 	return append(values, value)
 }
 
-func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolResultContextPolicy, resolver ToolResultRevisionResolver) []*schema.Message {
+func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolResultContextPolicy, resolver ToolResultFileResolver) []*schema.Message {
 	type retainedCall struct {
 		toolName  string
 		arguments string
@@ -303,13 +312,19 @@ func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolRe
 		}
 	}
 
-	// Decide which read_file bodies to keep verbatim. Scanning newest→oldest lets
-	// the freshest unchanged prose win the byte budget; everything else collapses
-	// to a receipt below. This only chooses body-vs-receipt — the keep/drop of the
-	// message and its paired assistant call is still governed by the pairing gates
-	// (valid, retain, count==1) in the main loop, so no tool_call is orphaned.
-	keepBodyCallIDs := make(map[string]struct{})
-	if resolver != nil && policy.RetainedProseMaxBytes > 0 {
+	// Decide which read_file bodies stay usable. Scanning newest→oldest lets
+	// the freshest prose win the byte budget. An unchanged file keeps the exact
+	// body the model already saw (byte-identical reusable prefix). A file that
+	// changed — most often through the model's own edit_file / write_file — is
+	// REFRESHED to its current window instead of collapsing: the model starts
+	// the turn with current line numbers and no reason to re-read. Refreshing
+	// needs a window resolver; without one, a changed body still collapses to a
+	// receipt. This only chooses the body content — the keep/drop of the
+	// message and its paired assistant call is still governed by the pairing
+	// gates (valid, retain, count==1) in the main loop, so no tool_call is
+	// orphaned.
+	bodyContentByID := make(map[string]string)
+	if resolver.Revision != nil && policy.RetainedProseMaxBytes > 0 {
 		usedBytes := 0
 		for i := len(messages) - 1; i >= 0; i-- {
 			msg := messages[i]
@@ -324,19 +339,34 @@ func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolRe
 			if callPolicy.toolName != "read_file" || isRetainedToolReceipt(msg.Content) {
 				continue
 			}
-			anchor, path, parsed := parseReadFileAnchor(msg.Content)
-			if !parsed || anchor == "" {
+			metadata, parsed := parseReadFileMetadata(msg.Content)
+			if !parsed || metadata.Revision == "" {
 				continue
 			}
-			current, resolved := resolver(path)
-			if !resolved || current != anchor {
+			current, resolved := resolver.Revision(metadata.FilePath)
+			if !resolved {
 				continue
 			}
-			if usedBytes+len(msg.Content) > policy.RetainedProseMaxBytes {
+			retained := ""
+			if current == metadata.Revision {
+				retained = msg.Content
+			} else if resolver.Window != nil {
+				view, windowOK := resolver.Window(metadata.FilePath, metadata.Offset, metadata.Limit)
+				if !windowOK || view.Revision != current {
+					// The window could not be re-read consistently (missing,
+					// shrank past the offset, or raced another change); fall
+					// back to the receipt so the model re-reads deliberately.
+					continue
+				}
+				retained = refreshedReadFileBody(metadata, view)
+			} else {
 				continue
 			}
-			usedBytes += len(msg.Content)
-			keepBodyCallIDs[callID] = struct{}{}
+			if usedBytes+len(retained) > policy.RetainedProseMaxBytes {
+				continue
+			}
+			usedBytes += len(retained)
+			bodyContentByID[callID] = retained
 		}
 	}
 
@@ -380,9 +410,11 @@ func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolRe
 			// Resolve it from the paired assistant call so filtering and semantic
 			// compaction always make the same decision for both halves.
 			next.ToolName = callPolicy.toolName
-			if _, keepBody := keepBodyCallIDs[callID]; keepBody {
-				// The file is unchanged since it was read: keep the exact body the
-				// model already saw so the reusable prefix stays byte-identical.
+			if body, keepBody := bodyContentByID[callID]; keepBody {
+				// Unchanged files keep the exact stored body; changed files were
+				// refreshed above, so the model always starts the turn with
+				// current line numbers when the budget allows.
+				next.Content = body
 				filtered = append(filtered, &next)
 				continue
 			}
@@ -392,4 +424,24 @@ func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolRe
 		}
 	}
 	return filtered
+}
+
+// refreshedReadFileBody rebuilds one read_file result for a file that changed
+// since the original read: the same offset/limit window re-selected from the
+// current content, the metadata revision moved forward, and a refreshed marker
+// so the model knows the body is turn-current rather than what it originally
+// saw.
+func refreshedReadFileBody(metadata workspaceReadFileMetadata, view ToolResultFileView) string {
+	refreshed := metadata
+	refreshed.Revision = view.Revision
+	refreshed.Refreshed = true
+	encoded, err := json.Marshal(refreshed)
+	if err != nil {
+		return ""
+	}
+	body := formatWorkspaceLineNumbers(view.Content, metadata.Offset)
+	if body == "" {
+		return ""
+	}
+	return string(encoded) + "\n" + body
 }

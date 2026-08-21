@@ -23,22 +23,39 @@ type workspaceChangeToolReceipt struct {
 }
 
 type workspaceChangeEditReceipt struct {
-	ID           string `json:"id,omitempty"`
-	Replacements int    `json:"replacements"`
+	ID           string                       `json:"id,omitempty"`
+	Replacements int                          `json:"replacements"`
+	Hunks        []workspaceChangeHunkReceipt `json:"hunks,omitempty"`
+}
+
+// workspaceChangeHunkReceipt reports one hunk's inclusive 1-based line span in
+// the before and after snapshots. Edits applied to files that carry no line
+// metadata report zero values, which the JSON encoding omits.
+type workspaceChangeHunkReceipt struct {
+	BeforeStartLine int `json:"before_start_line,omitempty"`
+	BeforeEndLine   int `json:"before_end_line,omitempty"`
+	AfterStartLine  int `json:"after_start_line,omitempty"`
+	AfterEndLine    int `json:"after_end_line,omitempty"`
 }
 
 type workspaceChangeToolModelReceipt struct {
-	Schema         string `json:"schema"`
-	Status         string `json:"status"`
-	Workspace      string `json:"workspace"`
-	ChangeGroupID  string `json:"change_group_id"`
-	ReviewThreadID string `json:"review_thread_id,omitempty"`
-	ChangeSetID    string `json:"change_set_id"`
-	Path           string `json:"path"`
-	ReviewStatus   string `json:"review_status"`
-	ApplyState     string `json:"apply_state"`
+	Schema         string                       `json:"schema"`
+	Status         string                       `json:"status"`
+	Workspace      string                       `json:"workspace"`
+	ChangeGroupID  string                       `json:"change_group_id"`
+	ReviewThreadID string                       `json:"review_thread_id,omitempty"`
+	ChangeSetID    string                       `json:"change_set_id"`
+	Path           string                       `json:"path"`
+	Revision       string                       `json:"revision,omitempty"`
+	ReviewStatus   string                       `json:"review_status"`
+	ApplyState     string                       `json:"apply_state"`
+	Edits          []workspaceChangeEditReceipt `json:"edits,omitempty"`
 }
 
+// workspaceChangeToolResultForModel 将内部 receipt 转成模型可见版本：
+// 隐藏 base_revision（修改前快照），但保留修改后的 revision，
+// 让模型能把它作为下一次 edit_file 的 file_revision 链式编辑、免去重复读取。
+// 每个 edit 附带修改前后的行号区间，供模型推算后续行号而无需重读文件。
 func workspaceChangeToolResultForModel(toolName, content string) string {
 	receipt, ok := parseWorkspaceChangeToolReceipt(toolName, content)
 	if !ok {
@@ -52,8 +69,10 @@ func workspaceChangeToolResultForModel(toolName, content string) string {
 		ReviewThreadID: receipt.ReviewThreadID,
 		ChangeSetID:    receipt.ChangeSetID,
 		Path:           receipt.Path,
+		Revision:       receipt.Revision,
 		ReviewStatus:   receipt.ReviewStatus,
 		ApplyState:     receipt.ApplyState,
+		Edits:          receipt.Edits,
 	})
 	if err != nil {
 		return content
