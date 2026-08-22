@@ -6,7 +6,7 @@ import { BookSettingsShortcuts } from './BookSettingsShortcuts'
 describe('BookSettingsShortcuts', () => {
   beforeEach(() => window.localStorage.clear())
 
-  it('默认 Pin 七个自适应快捷入口，并可 Pin 动态发现的 Markdown 文件', async () => {
+  it('默认 Pin 六个自适应快捷入口，并可 Pin 动态发现的 Markdown 文件', async () => {
     const user = userEvent.setup()
     render(
       <BookSettingsShortcuts
@@ -15,7 +15,6 @@ describe('BookSettingsShortcuts', () => {
           { name: 'CREATOR.md', type: 'file' },
           { name: 'setting', type: 'dir', children: [
             { name: 'outline.md', type: 'file' },
-            { name: 'progress.md', type: 'file' },
             { name: 'outline-format.md', type: 'file' },
             { name: 'chapter-group-format.md', type: 'file' },
             { name: '人物关系.md', type: 'file' },
@@ -31,7 +30,6 @@ describe('BookSettingsShortcuts', () => {
 
     expect(screen.getByRole('button', { name: '大纲' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '规则' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '进度' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^灵感尚未创建/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^状态尚未创建/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '大纲结构' })).toBeInTheDocument()

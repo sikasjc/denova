@@ -120,7 +120,7 @@ describe('AgentPanel', () => {
     await user.click(screen.getByRole('button', { name: '按细纲写下一章' }))
 
     const textbox = screen.getByRole('textbox')
-    await waitFor(() => expect(textbox).toHaveTextContent('在同一轮同步更新 setting/progress.md 与 setting/character-states.md'))
+    await waitFor(() => expect(textbox).toHaveTextContent('在同一轮同步更新 setting/character-states.md'))
     expect(screen.queryByRole('combobox', { name: '写作任务类型' })).not.toBeInTheDocument()
     expect(textbox).toHaveTextContent('章节是否标记成章不影响同步')
     expect(textbox).not.toHaveTextContent('由我在章节列表确认后再标记为成章')

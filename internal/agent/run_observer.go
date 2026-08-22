@@ -26,6 +26,7 @@ type RunObserver struct {
 	llmSpanID      string
 	lastLLMOutcome LLMOutcome
 	pendingTools   map[string]*traceSpanHandle
+	pendingEdit    *pendingEditFileRepair
 	mu             sync.Mutex
 }
 
@@ -94,6 +95,37 @@ func (o *RunObserver) LastLLMOutcome() LLMOutcome {
 	outcome := o.lastLLMOutcome
 	outcome.RequestedTools = append([]string(nil), outcome.RequestedTools...)
 	return outcome
+}
+
+// pendingEditFileRepair is deliberately run-scoped and one-shot. It lets a
+// model repair a structurally incomplete edit_file call by sending the
+// missing path in a follow-up call, without retaining file content in the
+// conversation or allowing a stale patch to leak into another run.
+type pendingEditFileRepair struct {
+	arguments string
+}
+
+func (o *RunObserver) RememberPendingEditFile(arguments string) {
+	if o == nil {
+		return
+	}
+	o.mu.Lock()
+	o.pendingEdit = &pendingEditFileRepair{arguments: arguments}
+	o.mu.Unlock()
+}
+
+func (o *RunObserver) TakePendingEditFile() (string, bool) {
+	if o == nil {
+		return "", false
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.pendingEdit == nil {
+		return "", false
+	}
+	arguments := o.pendingEdit.arguments
+	o.pendingEdit = nil
+	return arguments, true
 }
 
 // RunID returns the durable run identity available to tools in this context.

@@ -267,7 +267,7 @@ func TestAutomationMutationCheckRunsOnlyContentTriggersForChapterWrites(t *testi
 		t.Fatalf("CreateAutomation batch failed: %v", err)
 	}
 
-	items, err := app.automation().CheckContentTriggersForWorkspaceMutation(context.Background(), "test_mutation", []string{"setting/progress.md"})
+	items, err := app.automation().CheckContentTriggersForWorkspaceMutation(context.Background(), "test_mutation", []string{"setting/character-states.md"})
 	if err != nil {
 		t.Fatalf("non-chapter mutation check failed: %v", err)
 	}

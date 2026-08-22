@@ -145,7 +145,7 @@ func TestUserMessageReferencesPersistAcrossSessionReload(t *testing.T) {
 	}
 	if err := sess.AppendWithMetadata(schema.UserMessage("请修改"), MessageMetadata{UserReferences: []UserMessageReference{
 		{Kind: "file", Label: "chapters/ch01.md"},
-		{Kind: "review_comment", ID: "comment-1", Label: "setting/progress.md", Detail: "需要增加爽点"},
+		{Kind: "review_comment", ID: "comment-1", Label: "setting/test.md", Detail: "需要增加爽点"},
 	}}); err != nil {
 		t.Fatal(err)
 	}

@@ -32,7 +32,7 @@ func TestShouldInlineWritingSkillTrustsOnlyStructuredIntentAndReviewFeedback(t *
 		{Message: "续写下一章"},
 		{Message: "请修改章节里的这段对白"},
 		{Message: "Please revise this scene."},
-		{Message: "帮我分析 progress.md 是否有问题"},
+		{Message: "帮我分析 setting/test.md 是否有问题"},
 		{Message: "讨论一下人物关系"},
 		{Message: "讨论一下改写方案"},
 		{Message: "这个场景要不要续写得更紧张？"},

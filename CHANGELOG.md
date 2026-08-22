@@ -35,6 +35,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `edit_file` 现在支持缺少路径时暂存一次编辑参数，并在模型补充路径后自动合并；同时对被引号转义的 `old_string` 做受限兼容处理。工具参数 JSON 会在结构明确时自动补齐缺失的闭合符，并返回具体的中文语法错误位置和修复方向，避免把不完整参数交给工具执行。
+- 移除 `setting/progress.md` 的特殊文件支持：不再初始化、注入上下文、写入提示词或显示书籍设定快捷入口；旧版快捷收藏会自动过滤该路径，测试占位统一使用 `setting/test.md`，不删除用户已有文件。
+- `edit_file` now caches one incomplete edit request when the file path is missing and merges it after the model supplies the path. It also has constrained compatibility handling for quote-escaped `old_string` values. Tool-argument JSON is repaired automatically only when missing closing delimiters are unambiguous, with concise Chinese diagnostics that identify the syntax location and correction direction before execution.
+- Removed special handling for `setting/progress.md`: it is no longer initialized, injected into context, mentioned in writing prompts, or shown in Book Settings shortcuts. Legacy pinned shortcuts filter the path automatically; test fixtures use `setting/test.md`, and existing user files are not deleted.
+
 - 文件工具与上下文链路完成一轮收敛：`read_file` 默认窗口由 2000 行降至 300 行，并继续返回带行号正文与 revision；`edit_file` 优先使用 revision 守护的按行修改，精确修改仅用于行内或全量匹配，模型无需再提供 edit ID；成功回执保留后续编辑所需的 revision 与行号区间。工具描述、参数 Schema、模型可见结果及变更回执均已精简，运行元数据移至日志，同一路径跨轮只保留最新读取结果，并新增模型输入按来源的 bytes/token 统计。
 - File tools and context handling were consolidated: `read_file` now defaults to 300 lines instead of 2000 while retaining numbered content and revision guards; `edit_file` prefers revision-guarded line edits, exact matching is reserved for inline or replace-all changes, and model-supplied edit IDs are no longer needed. Successful receipts retain only the revision and line ranges needed for follow-up edits. Tool descriptions, parameter schemas, model-visible results, and change receipts are smaller; operational metadata stays in logs, only the newest retained read per path is kept across turns, and model-input bytes/tokens are attributed by source.
 

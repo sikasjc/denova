@@ -181,13 +181,26 @@ func (m *toolOrchestratorMiddleware) WrapInvokableToolCall(
 	toolCtx *adk.ToolContext,
 ) (adk.InvokableToolCallEndpoint, error) {
 	return func(ctx context.Context, args string, opts ...tool.Option) (string, error) {
-		decision := m.buildToolDecision(toolCtx, args)
 		observer := RunObserverFromContext(ctx)
+		preparedArgs, _ := repairToolArgumentsJSON(args)
+		preparedArgs, repairMessage := prepareEditFileArguments(toolName(toolCtx), preparedArgs, observer)
+		decision := m.buildToolDecision(toolCtx, preparedArgs)
+		if repairMessage != "" {
+			observer.RecordToolDecision(decision)
+			observer.RecordToolExecution(ToolExecutionRecord{
+				ToolName:   decision.ToolName,
+				ToolCallID: decision.ToolCallID,
+				Status:     "error",
+				Capability: decision.Capability,
+				Error:      repairMessage,
+			})
+			return repairMessage, nil
+		}
 		outcome := LLMOutcome{}
 		if observer != nil {
 			outcome = observer.LastLLMOutcome()
 		}
-		decision = applyToolArgumentValidation(decision, args, outcome)
+		decision = applyToolArgumentValidation(decision, preparedArgs, outcome)
 		observer.RecordToolDecision(decision)
 		if decision.Action == "blocked" {
 			msg := decision.Reason
@@ -199,7 +212,7 @@ func (m *toolOrchestratorMiddleware) WrapInvokableToolCall(
 		}
 		release := m.acquireToolExecution(decision)
 		defer release()
-		result, err := endpoint(ctx, args, opts...)
+		result, err := endpoint(ctx, preparedArgs, opts...)
 		if err != nil {
 			if _, ok := compose.IsInterruptRerunError(err); ok {
 				return "", err
@@ -215,7 +228,7 @@ func (m *toolOrchestratorMiddleware) WrapInvokableToolCall(
 			})
 			return msg, nil
 		}
-		filtered := FilterToolResultForModelWithLimit(toolName(toolCtx), args, result, m.toolResultLimitBytes())
+		filtered := FilterToolResultForModelWithLimit(toolName(toolCtx), preparedArgs, result, m.toolResultLimitBytes())
 		record := ToolExecutionRecord{
 			ToolName:       filtered.Manifest.Name,
 			ToolCallID:     decision.ToolCallID,
@@ -274,13 +287,26 @@ func (m *toolOrchestratorMiddleware) WrapStreamableToolCall(
 	toolCtx *adk.ToolContext,
 ) (adk.StreamableToolCallEndpoint, error) {
 	return func(ctx context.Context, args string, opts ...tool.Option) (*schema.StreamReader[string], error) {
-		decision := m.buildToolDecision(toolCtx, args)
 		observer := RunObserverFromContext(ctx)
+		preparedArgs, _ := repairToolArgumentsJSON(args)
+		preparedArgs, repairMessage := prepareEditFileArguments(toolName(toolCtx), preparedArgs, observer)
+		decision := m.buildToolDecision(toolCtx, preparedArgs)
+		if repairMessage != "" {
+			observer.RecordToolDecision(decision)
+			observer.RecordToolExecution(ToolExecutionRecord{
+				ToolName:   decision.ToolName,
+				ToolCallID: decision.ToolCallID,
+				Status:     "error",
+				Capability: decision.Capability,
+				Error:      repairMessage,
+			})
+			return singleChunkReader(repairMessage), nil
+		}
 		outcome := LLMOutcome{}
 		if observer != nil {
 			outcome = observer.LastLLMOutcome()
 		}
-		decision = applyToolArgumentValidation(decision, args, outcome)
+		decision = applyToolArgumentValidation(decision, preparedArgs, outcome)
 		observer.RecordToolDecision(decision)
 		if decision.Action == "blocked" {
 			msg := decision.Reason
@@ -291,7 +317,7 @@ func (m *toolOrchestratorMiddleware) WrapStreamableToolCall(
 			return singleChunkReader(msg), nil
 		}
 		release := m.acquireToolExecution(decision)
-		sr, err := endpoint(ctx, args, opts...)
+		sr, err := endpoint(ctx, preparedArgs, opts...)
 		if err != nil {
 			release()
 			if _, ok := compose.IsInterruptRerunError(err); ok {
@@ -307,7 +333,7 @@ func (m *toolOrchestratorMiddleware) WrapStreamableToolCall(
 			})
 			return singleChunkReader(toolEndpointErrorMessage(decision.ToolName, err)), nil
 		}
-		return filterToolResultReader(ctx, sr, toolCtx, args, m.toolResultLimitBytes(), release), nil
+		return filterToolResultReader(ctx, sr, toolCtx, preparedArgs, m.toolResultLimitBytes(), release), nil
 	}, nil
 }
 
@@ -498,34 +524,16 @@ func applyToolArgumentValidation(decision ToolDecision, args string, outcome LLM
 
 func invalidToolArgumentsMessage(decision ToolDecision, args string, err error, outcome LLMOutcome) string {
 	if isContentFilterInterruptedArguments(err, decision, outcome) {
-		target := strings.TrimSpace(decision.Target)
-		if target == "" {
-			target = "(unknown)"
-		}
-		return fmt.Sprintf(`[tool error]
-type: invalid_tool_arguments
-tool: %s
-reason: model_output_interrupted_by_content_filter
-retryable: false
-workspace_mutated: false
-args_complete: false
-args_bytes: %d
-model_finish_reason: %s
-target: %s
-
-中文：模型在生成工具参数时被内容过滤中断，arguments 不是完整 JSON 对象：%v。Denova 已阻止工具执行，文件未写入。请直接告知用户本次写入失败的原因，不要重试同一个写入工具。
-English: The model output was stopped by content filtering while producing tool arguments, so arguments are not a complete JSON object: %v. Denova blocked tool execution and no file was written. Tell the user what happened; do not retry the same write tool.`, decision.ToolName, len(args), strings.TrimSpace(outcome.FinishReason), target, err, err)
+		return fmt.Sprintf(`[工具错误]
+工具：%s
+错误：%s
+结果：未执行，文件未修改。
+动作：补齐并修正 JSON 后重试一次；若再次失败，停止重试。`, decision.ToolName, jsonArgumentsErrorHint(args, err))
 	}
-	return fmt.Sprintf(`[tool error]
-type: invalid_tool_arguments
-tool: %s
-retryable: true
-workspace_mutated: false
-args_complete: false
-args_bytes: %d
-
-中文：工具 %q 的参数不是完整 JSON 对象：%v。请修正 arguments，确保它是完整、合法的 JSON object；字符串里的换行、引号和反斜杠必须正确转义。
-English: Tool %q arguments are not a complete JSON object: %v. Tool arguments must be a complete JSON object; fix arguments and escape newlines, quotes, and backslashes inside strings.`, decision.ToolName, len(args), decision.ToolName, err, decision.ToolName, err)
+	return fmt.Sprintf(`[工具错误]
+工具：%s
+错误：%s
+修正：补齐 JSON，并检查字段中的换行、引号和反斜杠后重试。`, decision.ToolName, jsonArgumentsErrorHint(args, err))
 }
 
 func isContentFilterInterruptedArguments(err error, decision ToolDecision, outcome LLMOutcome) bool {

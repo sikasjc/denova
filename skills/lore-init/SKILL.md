@@ -28,7 +28,7 @@ agent: config_manager,interactive_story
    - 每个资料条目的 `brief_description` 必须以“类型 名称。”开头，后接 3-5 句身份、别名、关键事实、适用场景和触发词说明
    - 使用文件写入工具更新 `CREATOR.md`
    - 不写 `ideas.md`
-   - 不写 `setting/outline.md`、`setting/progress.md`、`setting/character-states.md`
+   - 不写 `setting/outline.md`、`setting/character-states.md`
    - 不创建 `chapters/` 文件
    - 不创建互动 story，不伪造首个互动回合
 

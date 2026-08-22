@@ -28,7 +28,7 @@ func TestApplyWritingSkillRuntimePolicyResolvesDefaultNameOnly(t *testing.T) {
 			SystemPrompt: "Return notes.",
 		}},
 	}}
-	req := &agent.ChatRequest{Message: "帮我分析一下 progress.md 有没有问题", WritingIntent: config.WritingIntentAnalysis}
+	req := &agent.ChatRequest{Message: "帮我分析一下 setting/test.md 有没有问题", WritingIntent: config.WritingIntentAnalysis}
 
 	if err := applyWritingSkillRuntimePolicy(context.Background(), runtime, req); err != nil {
 		t.Fatal(err)

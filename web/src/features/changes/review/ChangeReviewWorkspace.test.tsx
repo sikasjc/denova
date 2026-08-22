@@ -174,7 +174,7 @@ describe('ChangeReviewWorkspace', () => {
     const thread = reviewThread()
     thread.files.push({
       ...thread.files[0],
-      path: 'setting/progress.md',
+      path: 'setting/test.md',
       latest_change_set_id: 'set-3',
       change_set_ids: ['set-3'],
       pending_edit_ids: ['edit-3'],

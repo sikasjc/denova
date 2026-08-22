@@ -400,7 +400,7 @@ func runTraceToolDecisionInvalidArgs(data map[string]any) bool {
 	}
 	reason := stringField(decision, "reason")
 	return strings.Contains(reason, "参数不是完整 JSON 对象") ||
-		strings.Contains(reason, "Tool arguments must be a complete JSON object")
+		strings.Contains(reason, "工具参数未完整生成")
 }
 
 func runTraceToolExecutionStatus(data map[string]any) (string, bool) {

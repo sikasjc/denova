@@ -24,8 +24,6 @@ const planning = {
   'planning.outlineEmpty': 'setting/outline.md has not been generated',
   'planning.creatorRules': 'Creation Rules',
   'planning.creatorRulesTab': 'Rules',
-  'planning.writingProgress': 'Writing Progress',
-  'planning.writingProgressTab': 'Progress',
   'planning.characterStates': 'State',
   'planning.outlineFormatTab': 'Outline Format',
   'planning.chapterGroupFormatTab': 'Detailed-Outline Format',

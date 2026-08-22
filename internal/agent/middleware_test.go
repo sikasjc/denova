@@ -252,6 +252,75 @@ func TestToolOrchestratorAllowsIDEWriteAndFiltersResult(t *testing.T) {
 	}
 }
 
+func TestToolOrchestratorRepairsMissingEditFilePathWithoutRegeneratingPatch(t *testing.T) {
+	observer := newRunObserver(nil, "root-span")
+	ctx := ContextWithRunObserver(context.Background(), observer)
+	middleware := &toolOrchestratorMiddleware{agentKind: AgentKindIDE}
+	var calls []string
+	endpoint, err := middleware.WrapInvokableToolCall(
+		context.Background(),
+		func(_ context.Context, args string, _ ...tool.Option) (string, error) {
+			calls = append(calls, args)
+			return "applied", nil
+		},
+		&adk.ToolContext{Name: "edit_file", CallID: "call-edit"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first := `{"edits":[{"old_string":"旧句","new_string":"新句"}],"file_revision":"sha256:old"}`
+	result, err := endpoint(ctx, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "recoverable_missing_argument") || !strings.Contains(result, "cached: true") {
+		t.Fatalf("missing-path repair response = %s", result)
+	}
+	if len(calls) != 0 {
+		t.Fatalf("incomplete edit must not reach endpoint: %#v", calls)
+	}
+
+	result, err = endpoint(ctx, `{"file_path":"chapters/ch01.md"}`)
+	if err != nil || result != "applied" {
+		t.Fatalf("repaired edit result=%q err=%v", result, err)
+	}
+	if len(calls) != 1 || !strings.Contains(calls[0], `"file_path":"chapters/ch01.md"`) || !strings.Contains(calls[0], `"old_string":"旧句"`) {
+		t.Fatalf("repaired arguments did not preserve the patch: %#v", calls)
+	}
+
+	_, err = endpoint(ctx, `{"file_path":"chapters/ch02.md"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 2 || calls[1] != `{"file_path":"chapters/ch02.md"}` {
+		t.Fatalf("pending patch should be one-shot: %#v", calls)
+	}
+}
+
+func TestToolOrchestratorRepairsMissingJSONClosersBeforeExecution(t *testing.T) {
+	middleware := &toolOrchestratorMiddleware{agentKind: AgentKindIDE}
+	var got string
+	endpoint, err := middleware.WrapInvokableToolCall(
+		context.Background(),
+		func(_ context.Context, args string, _ ...tool.Option) (string, error) {
+			got = args
+			return "ok", nil
+		},
+		&adk.ToolContext{Name: "write_file", CallID: "call-repair"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := endpoint(context.Background(), `{"file_path":"draft.md","content":"正文"`)
+	if err != nil || result != "ok" {
+		t.Fatalf("repaired tool call result=%q err=%v", result, err)
+	}
+	if got != `{"file_path":"draft.md","content":"正文"}` {
+		t.Fatalf("unexpected repaired arguments: %s", got)
+	}
+}
+
 func TestToolOrchestratorTruncatesResultWhenLimitConfigured(t *testing.T) {
 	middleware := &toolOrchestratorMiddleware{agentKind: AgentKindIDE, toolResultMaxBytes: 128}
 	endpoint, err := middleware.WrapInvokableToolCall(
@@ -295,8 +364,8 @@ func TestToolOrchestratorBlocksMalformedJSONArguments(t *testing.T) {
 	if called {
 		t.Fatal("malformed JSON arguments should be blocked before endpoint is called")
 	}
-	if !strings.Contains(result, "参数不是完整 JSON 对象") ||
-		!strings.Contains(result, "Tool arguments must be a complete JSON object") {
+	if !strings.Contains(result, "字符串未闭合") ||
+		!strings.Contains(result, "补齐 JSON") || strings.Contains(result, "English:") {
 		t.Fatalf("unexpected malformed-arguments result: %s", result)
 	}
 	if strings.Contains(result, "重新发起同一个工具调用") {
@@ -340,14 +409,9 @@ func TestToolOrchestratorReturnsContentFilterContextForIncompleteWriteArguments(
 		t.Fatal("content-filter interrupted arguments should be blocked before endpoint is called")
 	}
 	for _, want := range []string{
-		"reason: model_output_interrupted_by_content_filter",
-		"retryable: false",
-		"workspace_mutated: false",
-		"args_complete: false",
-		"model_finish_reason: content_filter",
-		"target: chapters/ch01.md",
-		"文件未写入",
-		"do not retry the same write tool",
+		"错误：字符串未闭合",
+		"结果：未执行，文件未修改。",
+		"动作：补齐并修正 JSON 后重试一次；若再次失败，停止重试。",
 	} {
 		if !strings.Contains(result, want) {
 			t.Fatalf("content-filter context missing %q:\n%s", want, result)
@@ -355,6 +419,9 @@ func TestToolOrchestratorReturnsContentFilterContextForIncompleteWriteArguments(
 	}
 	if strings.Contains(result, "重新发起同一个工具调用") {
 		t.Fatalf("content-filter context should not force a same-tool retry: %s", result)
+	}
+	if strings.Contains(result, "English:") || strings.Contains(result, "model_output_interrupted_by_content_filter") {
+		t.Fatalf("content-filter context should be Chinese and unambiguous: %s", result)
 	}
 	records := readRunLedgerRecords(t, ledger.Path())
 	var decision map[string]any
@@ -440,7 +507,7 @@ func TestToolOrchestratorBlocksMalformedJSONArgumentsForStream(t *testing.T) {
 	if called {
 		t.Fatal("malformed JSON stream arguments should be blocked before endpoint is called")
 	}
-	if !strings.Contains(result, "参数不是完整 JSON 对象") {
+	if !strings.Contains(result, "字符串未闭合") {
 		t.Fatalf("unexpected malformed-arguments stream result: %s", result)
 	}
 }

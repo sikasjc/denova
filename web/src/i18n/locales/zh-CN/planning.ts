@@ -24,8 +24,6 @@ const planning = {
   'planning.outlineEmpty': 'setting/outline.md 尚未生成',
   'planning.creatorRules': '创作规则',
   'planning.creatorRulesTab': '规则',
-  'planning.writingProgress': '写作进度',
-  'planning.writingProgressTab': '进度',
   'planning.characterStates': '状态',
   'planning.outlineFormatTab': '大纲结构',
   'planning.chapterGroupFormatTab': '细纲结构',

@@ -77,6 +77,25 @@ func TestApplyEditsReplaceAll(t *testing.T) {
 	}
 }
 
+func TestApplyEditsRepairsOneExtraJSONStringEncodingLayer(t *testing.T) {
+	const before = `title: "旧标题"`
+	service, path := newTestServiceWithFile(t, before)
+	change, err := service.ApplyEdits(context.Background(), ApplyEditsRequest{
+		Path:         path,
+		BaseRevision: Revision([]byte(before)),
+		Edits:        []TextEdit{{OldString: `\"旧标题\"`, NewString: `\"新标题\"`}},
+	})
+	if err != nil {
+		t.Fatalf("escaped edit should be repaired: %v", err)
+	}
+	if got := readTestFile(t, service.workspace, path); got != `title: "新标题"` {
+		t.Fatalf("unexpected repaired content %q", got)
+	}
+	if got := change.Edits[0].OldString; got != `"旧标题"` {
+		t.Fatalf("change should record the matched old string, got %q", got)
+	}
+}
+
 func TestApplyEditsPrefersLineRangesFromOneBaseSnapshot(t *testing.T) {
 	const before = "one\ntwo\nthree\nfour\n"
 	service, path := newTestServiceWithFile(t, before)

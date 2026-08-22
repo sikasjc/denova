@@ -92,7 +92,7 @@ describe('useAgentChat', () => {
       sendResult = result.current.send('请统一修改', {
         reviewFeedback: [{ reviewThreadId: 'thread-1', commentIds: ['comment-1'] }],
         reviewFeedbackDisplay: {
-          comments: [{ id: 'comment-1', body: '需要增加爽点', review_path: 'setting/progress.md', review_line: 24 }],
+          comments: [{ id: 'comment-1', body: '需要增加爽点', review_path: 'setting/test.md', review_line: 24 }],
         },
         onSubmissionStart,
       })
@@ -112,7 +112,7 @@ describe('useAgentChat', () => {
             expect.objectContaining({ kind: 'lore', label: 'character-1' }),
             expect.objectContaining({ kind: 'style', label: 'battle' }),
             expect.objectContaining({ kind: 'selection', label: 'chapters/ch02.md', start_line: 8, end_line: 10 }),
-            expect.objectContaining({ kind: 'review_comment', id: 'comment-1', label: 'setting/progress.md', start_line: 24, detail: '需要增加爽点' }),
+            expect.objectContaining({ kind: 'review_comment', id: 'comment-1', label: 'setting/test.md', start_line: 24, detail: '需要增加爽点' }),
           ]),
         }),
       }),

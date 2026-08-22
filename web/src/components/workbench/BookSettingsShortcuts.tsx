@@ -12,10 +12,12 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { flattenFileTree } from './workbench-utils'
 
 const STORAGE_PREFIX = 'nova.outline.pinned-settings:'
-const PINNED_STORAGE_VERSION = 3
+const PINNED_STORAGE_VERSION = 4
 const LEGACY_DEFAULT_PINNED_PATHS = ['setting/outline.md', 'CREATOR.md', 'setting/progress.md']
 const PREVIOUS_DEFAULT_PINNED_PATHS = [...LEGACY_DEFAULT_PINNED_PATHS, 'ideas.md', 'setting/character-states.md']
-const DEFAULT_PINNED_PATHS = [...PREVIOUS_DEFAULT_PINNED_PATHS, 'setting/outline-format.md', 'setting/chapter-group-format.md']
+const LAST_DEFAULT_PINNED_PATHS = [...PREVIOUS_DEFAULT_PINNED_PATHS, 'setting/outline-format.md', 'setting/chapter-group-format.md']
+const DEFAULT_PINNED_PATHS = ['setting/outline.md', 'CREATOR.md', 'ideas.md', 'setting/character-states.md', 'setting/outline-format.md', 'setting/chapter-group-format.md']
+const REMOVED_PINNED_PATHS = new Set(['setting/progress.md'])
 
 interface BookSettingItem {
   path: string
@@ -218,7 +220,6 @@ function discoverBookSettings({ tree, outline, ideas, chapterPlans, t }: {
   const known = new Map<string, BookSettingItem>([
     [outlinePath, { path: outlinePath, title: t('planning.outlineTab'), exists: Boolean(outline) || existingPaths.has(outlinePath) }],
     ['CREATOR.md', { path: 'CREATOR.md', title: t('planning.creatorRulesTab'), exists: existingPaths.has('CREATOR.md') }],
-    ['setting/progress.md', { path: 'setting/progress.md', title: t('planning.writingProgressTab'), exists: existingPaths.has('setting/progress.md') }],
     [ideasPath, { path: ideasPath, title: t('planning.ideas'), exists: Boolean(ideas) || existingPaths.has(ideasPath) }],
     ['setting/character-states.md', { path: 'setting/character-states.md', title: t('planning.characterStates'), exists: existingPaths.has('setting/character-states.md') }],
     ['setting/outline-format.md', { path: 'setting/outline-format.md', title: t('planning.outlineFormatTab'), exists: existingPaths.has('setting/outline-format.md') }],
@@ -234,6 +235,7 @@ function discoverBookSettings({ tree, outline, ideas, chapterPlans, t }: {
 }
 
 function isBookSettingPath(path: string, chapterPlanPaths: Set<string>) {
+  if (REMOVED_PINNED_PATHS.has(path)) return false
   const normalized = path.toLocaleLowerCase()
   return normalized.endsWith('.md')
     && !normalized.startsWith('chapters/')
@@ -253,13 +255,15 @@ function readPinnedPaths(workspace: string) {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(STORAGE_PREFIX + workspace) || 'null')
     if (parsed?.version === PINNED_STORAGE_VERSION && Array.isArray(parsed.paths) && parsed.paths.every((item: unknown) => typeof item === 'string')) {
-      return parsed.paths
+      return parsed.paths.filter((path: string) => !REMOVED_PINNED_PATHS.has(path))
     }
-    if (parsed?.version === 2 && Array.isArray(parsed.paths) && parsed.paths.every((item: unknown) => typeof item === 'string')) {
-      return samePaths(parsed.paths, PREVIOUS_DEFAULT_PINNED_PATHS) ? DEFAULT_PINNED_PATHS : parsed.paths
+    if ((parsed?.version === 2 || parsed?.version === 3) && Array.isArray(parsed.paths) && parsed.paths.every((item: unknown) => typeof item === 'string')) {
+      return samePaths(parsed.paths, PREVIOUS_DEFAULT_PINNED_PATHS) || samePaths(parsed.paths, LAST_DEFAULT_PINNED_PATHS)
+        ? DEFAULT_PINNED_PATHS
+        : parsed.paths.filter((path: string) => !REMOVED_PINNED_PATHS.has(path))
     }
     if (Array.isArray(parsed) && parsed.every((item: unknown) => typeof item === 'string')) {
-      return samePaths(parsed, LEGACY_DEFAULT_PINNED_PATHS) || samePaths(parsed, PREVIOUS_DEFAULT_PINNED_PATHS) ? DEFAULT_PINNED_PATHS : parsed
+      return samePaths(parsed, LEGACY_DEFAULT_PINNED_PATHS) || samePaths(parsed, PREVIOUS_DEFAULT_PINNED_PATHS) ? DEFAULT_PINNED_PATHS : parsed.filter((path: string) => !REMOVED_PINNED_PATHS.has(path))
     }
     return DEFAULT_PINNED_PATHS
   } catch {

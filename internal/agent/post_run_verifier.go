@@ -95,7 +95,7 @@ func verifyMutation(bookService *book.Service, mutation ToolMutation) []PostRunV
 	if strings.HasPrefix(relativeTarget, "chapters/") && !isChapterContentPath(relativeTarget) {
 		checks = append(checks, PostRunVerificationCheck{Type: "chapter_path", Target: target, Status: "warning", Message: "chapter writes should use .md or .txt files under chapters/"})
 	}
-	if relativeTarget == "setting/character-states.md" || relativeTarget == "progress.md" {
+	if relativeTarget == "setting/character-states.md" {
 		checks = append(checks, PostRunVerificationCheck{Type: "state_sync", Target: target, Status: "ok", Message: "tracked writing-state file"})
 	}
 	return checks

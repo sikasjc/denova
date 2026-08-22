@@ -93,9 +93,6 @@ func TestCompactContextIncludesCharacterStates(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(state.SettingDir(), "outline.md"), []byte("大纲内容"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(state.SettingDir(), "progress.md"), []byte("进度内容"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.WriteFile(filepath.Join(state.SettingDir(), CharacterStatesFileName), []byte("林川在废城东区地下仓库"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -124,8 +121,6 @@ func TestCompactContextIncludesCharacterStates(t *testing.T) {
 		"林川的长期人设",
 		"## 章节组细纲",
 		"章节组内容",
-		"## 当前进度",
-		"进度内容",
 		"## 角色状态",
 		"林川在废城东区地下仓库",
 		"## 章节目录概览",
@@ -142,7 +137,6 @@ func TestCompactContextIncludesCharacterStates(t *testing.T) {
 		"## 常驻资料库",
 		"## 章节组细纲",
 		"## 章节目录概览",
-		"## 当前进度",
 		"## 角色状态",
 	} {
 		index := strings.Index(context, marker)
@@ -166,9 +160,6 @@ func TestStableAndDynamicContextPartsSeparateByChurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(state.SettingDir(), "outline.md"), []byte("大纲内容"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(state.SettingDir(), "progress.md"), []byte("进度内容"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(state.SettingDir(), CharacterStatesFileName), []byte("角色状态内容"), 0o644); err != nil {
@@ -203,7 +194,7 @@ func TestStableAndDynamicContextPartsSeparateByChurn(t *testing.T) {
 	for _, part := range state.DynamicContextParts() {
 		dynamicIDs = append(dynamicIDs, part.ID)
 	}
-	if got, want := strings.Join(dynamicIDs, ","), "chapter_groups,chapter_paths,progress,character_states"; got != want {
+	if got, want := strings.Join(dynamicIDs, ","), "chapter_groups,chapter_paths,character_states"; got != want {
 		t.Fatalf("dynamic context ids = %s, want %s", got, want)
 	}
 }

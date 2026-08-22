@@ -273,12 +273,12 @@ describe('useWorkspace', () => {
     apiMock.readFile.mockImplementation((path: string) => Promise.resolve(
       path === 'setting/outline.md'
         ? { workspace: '/books/demo', path, content: '大纲', revision: 'outline-rev-1' }
-        : { workspace: '/books/demo', path, content: '进度', revision: 'progress-rev-1' },
+        : { workspace: '/books/demo', path, content: '测试内容', revision: 'test-rev-1' },
     ))
     apiMock.saveFile.mockImplementation((path: string) => (
       path === 'setting/outline.md'
         ? firstSave.promise
-        : Promise.resolve({ path, message: 'ok', revision: 'progress-rev-2' })
+        : Promise.resolve({ path, message: 'ok', revision: 'test-rev-2' })
     ))
 
     let workspace: ReturnType<typeof useWorkspace> | null = null
@@ -293,17 +293,17 @@ describe('useWorkspace', () => {
       outlineSave = workspace?.saveFileContent('setting/outline.md', '大纲修改后')
     })
     await act(async () => {
-      await workspace?.selectFile('setting/progress.md')
+      await workspace?.selectFile('setting/test.md')
     })
     await act(async () => {
       firstSave.resolve({ path: 'setting/outline.md', message: 'ok', revision: 'outline-rev-2' })
       await outlineSave
     })
     await act(async () => {
-      await workspace?.saveFileContent('setting/progress.md', '进度修改后')
+      await workspace?.saveFileContent('setting/test.md', '进度修改后')
     })
 
-    expect(apiMock.saveFile).toHaveBeenLastCalledWith('setting/progress.md', '进度修改后', 'progress-rev-1', '/books/demo')
+    expect(apiMock.saveFile).toHaveBeenLastCalledWith('setting/test.md', '进度修改后', 'test-rev-1', '/books/demo')
   })
 
   it('Agent 连续刷新同一文件时只应用最新一次读取', async () => {

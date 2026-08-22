@@ -501,7 +501,7 @@ describe('MarkdownEditor', () => {
 
     rerender(
       <MarkdownEditor
-        fileName="setting/progress.md"
+        fileName="setting/test.md"
         content="进度初始内容"
         onSave={saveProgress}
         autoSaveDelayMs={1200}
@@ -524,7 +524,7 @@ describe('MarkdownEditor', () => {
 
     expect(saveOutline).toHaveBeenCalledTimes(1)
     expect(saveProgress).toHaveBeenCalledTimes(1)
-    expect(saveProgress).toHaveBeenCalledWith('setting/progress.md', '进度修改后\n', '')
+    expect(saveProgress).toHaveBeenCalledWith('setting/test.md', '进度修改后\n', '')
   })
 
   it('保存进行中连续切换多个文件时不会让后一个草稿覆盖中间文件', async () => {
@@ -804,7 +804,7 @@ describe('MarkdownEditor', () => {
 
     rerender(
       <MarkdownEditor
-        fileName="setting/progress.md"
+        fileName="setting/test.md"
         content="进度初始内容"
         onSave={onSave}
         autoSaveDelayMs={1200}

@@ -185,7 +185,6 @@ func (s *State) DynamicContextParts() []CompactContextPart {
 		title string
 		id    string
 	}{
-		{"progress.md", "当前进度", "progress"},
 		{CharacterStatesFileName, "角色状态", "character_states"},
 	}
 
@@ -427,9 +426,9 @@ func (s *State) LoreContext() string {
 	return context
 }
 
-// HasState 检查作品是否已有大纲、进度、角色状态或资料库内容。
+// HasState 检查作品是否已有大纲、角色状态或资料库内容。
 func (s *State) HasState() bool {
-	files := []string{"outline.md", "progress.md", CharacterStatesFileName}
+	files := []string{"outline.md", CharacterStatesFileName}
 	for _, f := range files {
 		if _, err := os.Stat(filepath.Join(s.SettingDir(), f)); err == nil {
 			return true

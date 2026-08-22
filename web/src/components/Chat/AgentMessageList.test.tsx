@@ -204,7 +204,7 @@ describe('Agent MessageList', () => {
             user_references: [
               { kind: 'file', label: 'chapters/ch01.md' },
               { kind: 'selection', label: 'chapters/ch02.md', start_line: 8, end_line: 10, detail: '被引用的正文' },
-              { kind: 'review_comment', id: 'comment-1', label: 'setting/progress.md', start_line: 24, detail: '需要增加爽点' },
+              { kind: 'review_comment', id: 'comment-1', label: 'setting/test.md', start_line: 24, detail: '需要增加爽点' },
             ],
           },
           parts: [{ type: 'text', text: '请统一修改' }],

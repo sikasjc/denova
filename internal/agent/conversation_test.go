@@ -63,7 +63,7 @@ func TestSessionConversationPersistsUserMessageReferencesOutsideModelContent(t *
 	conversation := NewSessionConversation(sess)
 	conversation.SetUserMessageReferences([]session.UserMessageReference{
 		{Kind: "file", Label: "chapters/ch01.md"},
-		{Kind: "review_comment", ID: "comment-1", Label: "setting/progress.md", Detail: "需要增加爽点"},
+		{Kind: "review_comment", ID: "comment-1", Label: "setting/test.md", Detail: "需要增加爽点"},
 	})
 
 	history, err := conversation.PrepareMessages("请统一修改", "请统一修改")

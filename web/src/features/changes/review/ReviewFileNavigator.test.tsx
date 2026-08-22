@@ -10,7 +10,7 @@ describe('ReviewFileNavigator', () => {
     const onSelect = vi.fn()
     render(
       <ReviewFileNavigator
-        files={[reviewFile('chapters/one.md'), reviewFile('setting/progress.md')]}
+        files={[reviewFile('chapters/one.md'), reviewFile('setting/test.md')]}
         selectedPath="chapters/one.md"
         onSelect={onSelect}
         onCollapse={vi.fn()}
@@ -18,11 +18,11 @@ describe('ReviewFileNavigator', () => {
     )
 
     await user.click(screen.getByRole('button', { name: /项目文件.*2/ }))
-    const progress = screen.getByRole('menuitemcheckbox', { name: /setting\/progress\.md/ })
-    expect(progress).toBeVisible()
+    const testFile = screen.getByRole('menuitemcheckbox', { name: /setting\/test\.md/ })
+    expect(testFile).toBeVisible()
 
-    await user.click(progress)
-    expect(onSelect).toHaveBeenCalledWith('setting/progress.md')
+    await user.click(testFile)
+    expect(onSelect).toHaveBeenCalledWith('setting/test.md')
   })
 })
 

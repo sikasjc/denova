@@ -450,9 +450,6 @@ func TestIDEContextAnalysisSplitsStableAndDynamicWorkspaceState(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(state.SettingDir(), "outline.md"), []byte("## 第一卷\n\n主角进入废城。"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(state.SettingDir(), "progress.md"), []byte("当前进度：抵达废城入口。"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.WriteFile(filepath.Join(state.SettingDir(), book.CharacterStatesFileName), []byte("林川：警惕，轻伤。"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -486,7 +483,7 @@ func TestIDEContextAnalysisSplitsStableAndDynamicWorkspaceState(t *testing.T) {
 			Message: "继续写",
 			IDEContext: IDEContextRef{
 				CurrentFile: "chapters/ch0001-开局.md",
-				OpenFiles:   []string{"chapters/ch0001-开局.md", "setting/progress.md"},
+				OpenFiles:   []string{"chapters/ch0001-开局.md", "setting/test.md"},
 			},
 		},
 	)
@@ -509,7 +506,7 @@ func TestIDEContextAnalysisSplitsStableAndDynamicWorkspaceState(t *testing.T) {
 	if final.Source != "本轮上下文" || final.Title != "作品上下文与本轮用户请求" {
 		t.Fatalf("final message should carry the assembled workspace context label: %#v", final)
 	}
-	for _, want := range []string{"# 稳定作品上下文", "主角进入废城", "## 角色小标题", "林川长期设定", "# 本轮动态作品状态", "章节组：探索废城", "chapters/ch0001-开局.md", "当前进度：抵达废城入口", "林川：警惕", "## IDE 当前状态", "当前聚焦文件：chapters/ch0001-开局.md", "当前打开文件：chapters/ch0001-开局.md、setting/progress.md", "# 本轮用户请求（最高优先级）"} {
+	for _, want := range []string{"# 稳定作品上下文", "主角进入废城", "## 角色小标题", "林川长期设定", "# 本轮动态作品状态", "章节组：探索废城", "chapters/ch0001-开局.md", "林川：警惕", "## IDE 当前状态", "当前聚焦文件：chapters/ch0001-开局.md", "当前打开文件：chapters/ch0001-开局.md、setting/test.md", "# 本轮用户请求（最高优先级）"} {
 		if !strings.Contains(final.Content, want) {
 			t.Fatalf("final message missing %q:\n%s", want, final.Content)
 		}

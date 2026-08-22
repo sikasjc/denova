@@ -2,6 +2,7 @@ package workspacechange
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -322,7 +323,8 @@ func planTextEdits(path, base string, requested []TextEdit, autoAccept bool) (st
 		if edit.OldString == edit.NewString {
 			return "", nil, invalidEdit(path, index, editID, "new_string must differ from old_string", nil)
 		}
-		matches := literalMatches(base, edit.OldString)
+		oldString, newString := resolveEditStrings(base, edit.OldString, edit.NewString)
+		matches := literalMatches(base, oldString)
 		if len(matches) == 0 {
 			return "", nil, invalidEdit(path, index, editID, "old_string was not found", map[string]any{"match_count": 0})
 		}
@@ -334,13 +336,13 @@ func planTextEdits(path, base string, requested []TextEdit, autoAccept bool) (st
 		}
 		applied[index] = AppliedEdit{
 			ID:           editID,
-			OldString:    edit.OldString,
-			NewString:    edit.NewString,
+			OldString:    oldString,
+			NewString:    newString,
 			ReplaceAll:   edit.ReplaceAll,
 			ReviewStatus: reviewStatus,
 		}
 		for _, start := range matches {
-			spans = append(spans, plannedSpan{editIndex: index, start: start, end: start + len(edit.OldString)})
+			spans = append(spans, plannedSpan{editIndex: index, start: start, end: start + len(oldString)})
 		}
 	}
 	sort.SliceStable(spans, func(i, j int) bool {
@@ -397,6 +399,36 @@ func planTextEdits(path, base string, requested []TextEdit, autoAccept bool) (st
 		hunk.AfterStartLine, hunk.AfterEndLine = afterLines.rangeLines(span.afterStart, span.afterEnd)
 	}
 	return result, applied, nil
+}
+
+// resolveEditStrings keeps exact matching as the first and only normal path.
+// If that fails, it accepts one additional JSON-string decoding layer only
+// when the decoded old_string has a usable match. This repairs model output
+// such as `\\\"title\\\"` without weakening uniqueness or replace_all rules.
+func resolveEditStrings(base, oldString, newString string) (string, string) {
+	if len(literalMatches(base, oldString)) > 0 {
+		return oldString, newString
+	}
+	decodedOld, ok := decodeExtraJSONStringLayer(oldString)
+	if !ok || decodedOld == oldString {
+		return oldString, newString
+	}
+	if len(literalMatches(base, decodedOld)) == 0 {
+		return oldString, newString
+	}
+	decodedNew, newOK := decodeExtraJSONStringLayer(newString)
+	if newOK {
+		newString = decodedNew
+	}
+	return decodedOld, newString
+}
+
+func decodeExtraJSONStringLayer(value string) (string, bool) {
+	var decoded string
+	if err := json.Unmarshal([]byte(`"`+value+`"`), &decoded); err != nil {
+		return "", false
+	}
+	return decoded, true
 }
 
 func indexSourceLines(content string) []sourceLineSpan {

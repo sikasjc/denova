@@ -37,7 +37,7 @@ agent: ide
 3. 使用 `task` 工具委派 `reviewer` 做一次综合审稿。
 4. 主 Agent 聚合 reviewer 与用户审阅意见，生成最小必要 Patch Plan，再使用 `task` 工具委派 `fixer` 定点修复。
 5. fixer 返回后直接使用 `task` 委派 `final-gate` 检查用户要求、计划、canon 和风格约束。
-6. 使用 `task` 工具委派 `memory-patcher` 生成 progress 和 character-state 等状态更新。
+6. 使用 `task` 工具委派 `memory-patcher` 生成角色状态等状态更新。
 7. 主 Agent 输出最终结果，以及必要的用户可见状态更新摘要。
 
 ## 复杂场景处理
@@ -107,18 +107,17 @@ reviewer 必须返回结构化问题，每项包含：
 
 最终稿完成后，`memory-patcher` 必须生成这些更新：
 
-- `progress`: 剧情、时间线、地点、风险、未解决线索的变化。
 - `character_state`: 当前状态、动机、关系变化、伤病、已知信息、资源、承诺和秘密。
 - `world_state`: 只记录本轮即时故事状态中已经变化的事实。
 - `foreshadowing`: 新埋、推进、兑现或退场的伏笔。
 
-主 Agent 应在工具权限允许时把 `progress` 和 `character_state` 更新写入工作区对应状态文件；如果当前上下文无法确认文件路径，或用户明确要求只输出正文，则输出可应用的 patch 并说明未写入原因。
+主 Agent 应在工具权限允许时把 `character_state` 更新写入工作区对应状态文件；如果当前上下文无法确认文件路径，或用户明确要求只输出正文，则输出可应用的 patch 并说明未写入原因。
 
 完整章节写入或实质性剧情改写完成后，状态更新必须在同一轮基于最终正文落盘，不等待作者另行确认成章；章节状态只用于 UI 编辑标记。纯错字、标点或措辞润色没有改变叙事事实时无需生成状态更新。
 
 写入状态更新时必须使用文件工具：局部更新用 `edit_file`，全量重写用 `write_file`；写入后用 `read_file` 验证关键条目已经存在。
 
-长期稳定资料库不同于 progress 和 character-state：
+长期稳定资料库不同于 character-state：
 
 - 不要因为普通进度自动改写长期资料库。
 - 只有身份、长期关系、能力体系、世界规则或其他稳定 canon 发生重大变化时，才提出资料库更新建议。

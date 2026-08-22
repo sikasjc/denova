@@ -15,7 +15,7 @@ agent: ide
 3. 再做分卷规划：为每一卷写出本卷内容、关键节点和结束状态；只规划到卷级，不逐章拆分——逐章安排是细纲（group-plan）的职责
 4. 使用 write_file 将大纲写入 `setting/outline.md`
 5. 提取主要角色、世界观、地点、势力、规则和物品等长期设定，使用 write_lore_items 批量整理到资料库；不要再生成 `setting/characters.md` 或 `setting/world-building.md`
-6. 初始化 `setting/progress.md`（当前进度：尚未开始）和 `setting/character-states.md`（主要角色状态占位）
+6. 初始化 `setting/character-states.md`（主要角色状态占位）
 
 ## 大纲格式规范
 
@@ -34,7 +34,6 @@ agent: ide
 - 角色发展要有成长弧度
 - `setting/outline.md` 只记录卷级长期故事结构：一句话简介、核心剧情、核心设定概述和分卷规划，不记录逐章安排、已写进度、最近章节复盘或角色当前状态
 - `setting/chapter-groups/` 用于后续按当前进度生成接下来一组章节细纲，大纲阶段不要一次性批量生成很多组细纲
-- `setting/progress.md` 只记录当前写作进度、已完成章节摘要和短期衔接提示，不承担长期大纲职责
 - `setting/character-states.md` 只记录角色当前状态：最近出场、当前位置、身体状态、心理状态、当前目标、持有物、能力变化、关系变化和待回收伏笔，不写未来规划
 - 资料库只记录角色长期设定、核心关系、能力体系、世界观事实、地点、势力、规则和物品，不写章节规划、未来情节安排或每章状态抖动
 - 更新大纲时只修改作者明确要求变化的结构部分，不因章节完成而自动改大纲

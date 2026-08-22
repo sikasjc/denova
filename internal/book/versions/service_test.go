@@ -108,7 +108,7 @@ func TestGoGitVersionCreateDiffAndRestore(t *testing.T) {
 	service := NewService(dir)
 	settings := DefaultAutoSettings()
 	writeFile(t, dir, "chapters/ch0001.md", "第一版")
-	writeFile(t, dir, "setting/progress.md", "进度一")
+	writeFile(t, dir, "setting/test.md", "进度一")
 
 	first, err := service.Create("初始版本", VersionSourceManual, settings)
 	if err != nil {
@@ -129,7 +129,7 @@ func TestGoGitVersionCreateDiffAndRestore(t *testing.T) {
 
 	writeFile(t, dir, "chapters/ch0001.md", "第二版")
 	writeFile(t, dir, "chapters/ch0002.md", "新增章节")
-	if err := os.Remove(filepath.Join(dir, "setting", "progress.md")); err != nil {
+	if err := os.Remove(filepath.Join(dir, "setting", "custom.md")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -139,7 +139,7 @@ func TestGoGitVersionCreateDiffAndRestore(t *testing.T) {
 	}
 	assertChange(t, status.Changes, "chapters/ch0001.md", "modified")
 	assertChange(t, status.Changes, "chapters/ch0002.md", "added")
-	assertChange(t, status.Changes, "setting/progress.md", "deleted")
+	assertChange(t, status.Changes, "setting/test.md", "deleted")
 
 	diff, err := service.Diff(first.Version.ID, "chapters/ch0001.md")
 	if err != nil {
@@ -159,7 +159,7 @@ func TestGoGitVersionCreateDiffAndRestore(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "chapters", "ch0002.md")); !os.IsNotExist(err) {
 		t.Fatalf("restore should remove added file, err=%v", err)
 	}
-	if readFile(t, dir, "setting/progress.md") != "进度一" {
+	if readFile(t, dir, "setting/test.md") != "进度一" {
 		t.Fatalf("restore should recover deleted progress")
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".nova", "sessions", "internal.txt")); !os.IsNotExist(err) {
@@ -369,7 +369,7 @@ func TestGoGitVersionRestorePathsKeepsCurrentHead(t *testing.T) {
 	service := NewService(dir)
 	settings := DefaultAutoSettings()
 	writeFile(t, dir, "chapters/ch0001.md", "第一版")
-	writeFile(t, dir, "setting/progress.md", "进度一")
+	writeFile(t, dir, "setting/test.md", "进度一")
 
 	first, err := service.Create("初始版本", VersionSourceManual, settings)
 	if err != nil {
@@ -377,7 +377,7 @@ func TestGoGitVersionRestorePathsKeepsCurrentHead(t *testing.T) {
 	}
 	writeFile(t, dir, "chapters/ch0001.md", "第二版")
 	writeFile(t, dir, "chapters/ch0002.md", "新增章节")
-	if err := os.Remove(filepath.Join(dir, "setting", "progress.md")); err != nil {
+	if err := os.Remove(filepath.Join(dir, "setting", "custom.md")); err != nil {
 		t.Fatal(err)
 	}
 	second, err := service.Create("第二版本", VersionSourceManual, settings)
@@ -385,7 +385,7 @@ func TestGoGitVersionRestorePathsKeepsCurrentHead(t *testing.T) {
 		t.Fatalf("Create second failed: %v", err)
 	}
 
-	plan, err := service.RestorePlan(first.Version.ID, []string{"chapters/ch0001.md", "setting/progress.md", "chapters/ch0002.md"}, settings)
+	plan, err := service.RestorePlan(first.Version.ID, []string{"chapters/ch0001.md", "setting/test.md", "chapters/ch0002.md"}, settings)
 	if err != nil {
 		t.Fatalf("RestorePlan paths failed: %v", err)
 	}
@@ -393,7 +393,7 @@ func TestGoGitVersionRestorePathsKeepsCurrentHead(t *testing.T) {
 		t.Fatalf("unexpected restore plan: %#v", plan)
 	}
 
-	result, err := service.RestoreWithPaths(first.Version.ID, []string{"chapters/ch0001.md", "setting/progress.md", "chapters/ch0002.md"}, settings)
+	result, err := service.RestoreWithPaths(first.Version.ID, []string{"chapters/ch0001.md", "setting/test.md", "chapters/ch0002.md"}, settings)
 	if err != nil {
 		t.Fatalf("RestoreWithPaths failed: %v", err)
 	}
@@ -403,7 +403,7 @@ func TestGoGitVersionRestorePathsKeepsCurrentHead(t *testing.T) {
 	if got := readFile(t, dir, "chapters/ch0001.md"); got != "第一版" {
 		t.Fatalf("restored modified file = %q", got)
 	}
-	if got := readFile(t, dir, "setting/progress.md"); got != "进度一" {
+	if got := readFile(t, dir, "setting/test.md"); got != "进度一" {
 		t.Fatalf("restored deleted file = %q", got)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "chapters", "ch0002.md")); !os.IsNotExist(err) {
@@ -418,7 +418,7 @@ func TestGoGitVersionRestorePathsKeepsCurrentHead(t *testing.T) {
 		t.Fatalf("path restore should not move current version: %#v", status.Latest)
 	}
 	assertChange(t, status.Changes, "chapters/ch0001.md", "modified")
-	assertChange(t, status.Changes, "setting/progress.md", "added")
+	assertChange(t, status.Changes, "setting/test.md", "added")
 	assertChange(t, status.Changes, "chapters/ch0002.md", "deleted")
 
 	history, err := service.History(10)
