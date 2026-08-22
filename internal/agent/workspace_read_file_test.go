@@ -152,7 +152,7 @@ func TestWorkspaceReadFileToolPreservesDefaultWindowSchema(t *testing.T) {
 	}
 }
 
-func TestWorkspaceEditFileUsesCurrentRevisionWithoutReadDependency(t *testing.T) {
+func TestWorkspaceReplaceLinesUsesRevisionGuard(t *testing.T) {
 	workspace := t.TempDir()
 	path := filepath.Join(workspace, "ideas.md")
 	if err := os.WriteFile(path, []byte("original"), 0o644); err != nil {
@@ -165,11 +165,11 @@ func TestWorkspaceEditFileUsesCurrentRevisionWithoutReadDependency(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	editTool, err := newWorkspaceEditFileTool(service)
+	replaceLinesTool, err := newWorkspaceReplaceLinesTool(service)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = editTool.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"ideas.md","edits":[{"old_string":"manual update","new_string":"agent update"}]}`)
+	_, err = replaceLinesTool.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"ideas.md","file_revision":"`+workspacechange.Revision([]byte("manual update"))+`","replacements":[{"start_line":1,"content":"agent update"}]}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestWorkspaceEditFileUsesCurrentRevisionWithoutReadDependency(t *testing.T)
 		t.Fatal(readErr)
 	}
 	if string(content) != "agent update" {
-		t.Fatalf("edit_file did not apply against its current snapshot: %q", content)
+		t.Fatalf("replace_lines did not apply against its revision-checked snapshot: %q", content)
 	}
 }
 
@@ -212,14 +212,14 @@ func TestWorkspaceReadThenEditByLineUsesRevisionGuard(t *testing.T) {
 	if metadata.Revision == "" || !strings.Contains(body, "     2\tsecond") {
 		t.Fatalf("read result cannot safely drive a line edit: metadata=%#v body=%q", metadata, body)
 	}
-	editTool, err := newWorkspaceEditFileTool(service)
+	editTool, err := newWorkspaceReplaceLinesTool(service)
 	if err != nil {
 		t.Fatal(err)
 	}
 	lineEdit := fmt.Sprintf(`{
 		"file_path":"ideas.md",
 		"file_revision":%q,
-		"edits":[{"start_line":2,"new_string":"SECOND"}]
+		"replacements":[{"start_line":2,"content":"SECOND"}]
 	}`, metadata.Revision)
 	if _, err := editTool.(tool.InvokableTool).InvokableRun(context.Background(), lineEdit); err != nil {
 		t.Fatal(err)
@@ -236,7 +236,7 @@ func TestWorkspaceReadThenEditByLineUsesRevisionGuard(t *testing.T) {
 	staleEdit := fmt.Sprintf(`{
 		"file_path":"ideas.md",
 		"file_revision":%q,
-		"edits":[{"start_line":2,"new_string":"WRONG TARGET"}]
+		"replacements":[{"start_line":2,"content":"WRONG TARGET"}]
 	}`, staleRevision)
 	if _, err := editTool.(tool.InvokableTool).InvokableRun(context.Background(), staleEdit); err == nil {
 		t.Fatal("stale line numbers should be rejected")

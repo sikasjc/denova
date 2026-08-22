@@ -20,7 +20,7 @@ agent: ide
 - 结构化审阅反馈走下方独立分流，不因启用本 Skill 自动追加 full review。
 - 默认只使用主 Agent 和按规则触发的 `reviewer`；不要启动 writer、fixer 或其他写作 SubAgent。
 - 从用户实际指令判断范围；没有 `writing_scope` 字段，不要假设任务一定是下一章。一次写 N 章时先给出简洁的整体计划和分章计划。
-- 只读取必要上下文；新章节用 `write_file`，已有章节按 system prompt 用一次批量 `edit_file` 最小必要 Patch。
+- 只读取必要上下文；新章节用 `write_file`，已有章节按 system prompt 用一次批量 `replace_lines` 最小必要 Patch；人名、术语等批量字面量替换可用 `replace_text`。
 - 对新章节、完整场景或非结构化实质修订，初稿写入或待修订正文定位后，立即通过 `task` 委派 `reviewer`，并在 description 标记 `review_mode=full_review`。在其返回前，主 Agent 不得完整读回初稿、自行审稿、grep、列问题或修订；仅可恢复失败工具。
 - 主 Agent 聚合 reviewer/用户意见后只做一次统一的最小必要 Patch，不能机械逐条修改或因评论多而扩大范围。
 - Patch 后只做最终机械验证；不得重开全文审稿、问题清单或开放式修订循环。`[tool error]`、匹配或路径错误必须恢复，否则不得宣称已完成。

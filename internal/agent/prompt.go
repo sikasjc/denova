@@ -298,7 +298,18 @@ func IDEWorkspaceRuntimeContextsForState(state *book.State) IDEWorkspaceRuntimeC
 }
 
 func IDEWorkspaceRuntimeContextsForRequest(state *book.State, req ChatRequest) IDEWorkspaceRuntimeContexts {
-	contexts := IDEWorkspaceRuntimeContextsForState(state)
+	contexts := IDEWorkspaceRuntimeContexts{
+		StableTitle:  ideWorkspaceStableContextTitle,
+		DynamicTitle: ideWorkspaceDynamicContextTitle,
+	}
+	if state != nil {
+		snapshot := state.WritingContextSnapshot()
+		contexts.Stable = strings.TrimSpace(book.FormatCompactContextParts(snapshot.StableParts))
+		contexts.Dynamic = strings.TrimSpace(book.FormatCompactContextParts(snapshot.DynamicParts))
+	}
+	if contexts.Stable == "" && contexts.Dynamic == "" {
+		contexts.Stable = prompts.EmptyIDEStateHint()
+	}
 	ideContext := IDEContextRuntimeContext(req.IDEContext)
 	if strings.TrimSpace(ideContext) == "" {
 		return contexts

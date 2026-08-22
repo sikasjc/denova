@@ -34,7 +34,7 @@ const workspaceReadFileMaxSelectedBytes = 1024 * 1024
 // cap simply carry no anchor, so retention falls back to the compact receipt.
 const workspaceReadFileRevisionMaxBytes = 4 * 1024 * 1024
 
-var workspaceReadFileToolDescription = fmt.Sprintf(`Read a text file. Set revision_only=true to return only compact metadata (path, revision and size) without file content; use this after a revision conflict or when only the current revision is needed. Otherwise returns a bounded, line-numbered window: file_path must be absolute, defaults to line 1 and %d lines, and offset/limit select another window. The first line is JSON metadata; pass its revision and source line numbers to edit_file.`, agentFileReadDefaultLimitLines)
+var workspaceReadFileToolDescription = fmt.Sprintf(`Read a text file. Set revision_only=true to return only compact metadata (path, revision and size) without file content; use this after a revision conflict or when only the current revision is needed. Otherwise returns a bounded, line-numbered window: file_path must be absolute, defaults to line 1 and %d lines, and offset/limit select another window. The first line is JSON metadata; pass its revision and source line numbers to replace_lines.`, agentFileReadDefaultLimitLines)
 
 type workspaceReadFileInput struct {
 	FilePath     string `json:"file_path" jsonschema:"required,description=Absolute text-file path"`
@@ -59,7 +59,7 @@ type workspaceReadFileMetadata struct {
 	// Refreshed marks a body that cross-turn assembly has rewritten to the
 	// file's CURRENT content (same offset/limit window) because the file
 	// changed after the original read — typically through the model's own
-	// edit_file / write_file calls. A refreshed body's line numbers and
+	// replace_lines / replace_text / write_file calls. A refreshed body's line numbers and
 	// revision are current at the start of the turn, so the model can keep
 	// editing by line without re-reading. It is never set by the read_file
 	// tool itself.
@@ -305,7 +305,7 @@ func cachedWorkspaceFileRevision(absolute string) (string, bool) {
 }
 
 // rememberWorkspaceFileRevision seeds the anchor cache after a mutation whose
-// resulting revision is already known (for example a successful edit_file).
+// resulting revision is already known (for example a successful replace_lines).
 // Seeding keeps the next read_file metadata line and the per-turn context
 // assembly resolver cheap without re-reading the freshly written bytes. The
 // path may be workspace-relative (as in change receipts) and is resolved to

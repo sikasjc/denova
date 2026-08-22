@@ -24,7 +24,7 @@ agent: ide
 - `context-planner`、`reviewer`、`final-gate`、`memory-patcher` 默认只返回计划、审稿、检查或 patch；`writer` 和 `fixer` 是否写文件由委派说明决定。主 Agent 对落盘结果负责。
 - 专业阶段必须直接衔接：writer 返回后，主 Agent 不得完整读回、自审、grep、另列问题或改写，立即把产物与 Context Plan 交给 reviewer。
 - reviewer 只负责发现和说明问题；主 Agent 在交给 fixer 前必须聚合 reviewer 与用户审阅意见，生成最小必要 Patch Plan，写清每项问题、证据位置、必须保留内容、最小修改范围和重叠/冲突关系。
-- fixer 完整解决 blocker/major 和确需处理的 minor，但遵循 system prompt 的最小必要 Patch；已有章节默认使用 `edit_file`。
+- fixer 完整解决 blocker/major 和确需处理的 minor，但遵循 system prompt 的最小必要 Patch；已有章节默认使用 `replace_lines`，人名或术语批量替换使用 `replace_text`。
 - fixer 返回后直接委派 final-gate；主 Agent 不得在 reviewer、fixer、final-gate 间插入自审、全文读回、grep 或修订。只有 final-gate 报告 blocker 时，才交回 fixer 一次并再次执行 final-gate。
 - final-gate 通过后，只可读回最终关键片段确认落盘并进入 memory-patcher，不得重开审稿或修订循环。
 - 工具返回 `[tool error]`、`string not found`、参数或路径错误时不得宣称已完成；重新读取并重试。
@@ -115,7 +115,7 @@ reviewer 必须返回结构化问题，每项包含：
 
 完整章节写入或实质性剧情改写完成后，状态更新必须在同一轮基于最终正文落盘，不等待作者另行确认成章；章节状态只用于 UI 编辑标记。纯错字、标点或措辞润色没有改变叙事事实时无需生成状态更新。
 
-写入状态更新时必须使用文件工具：局部更新用 `edit_file`，全量重写用 `write_file`；写入后用 `read_file` 验证关键条目已经存在。
+写入状态更新时必须使用文件工具：局部更新用 `replace_lines`，全量重写用 `write_file`；写入后用 `read_file` 验证关键条目已经存在。
 
 长期稳定资料库不同于 character-state：
 

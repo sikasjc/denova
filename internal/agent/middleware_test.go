@@ -252,7 +252,7 @@ func TestToolOrchestratorAllowsIDEWriteAndFiltersResult(t *testing.T) {
 	}
 }
 
-func TestToolOrchestratorRepairsMissingEditFilePathWithoutRegeneratingPatch(t *testing.T) {
+func TestToolOrchestratorRepairsMissingReplaceLinesPathWithoutRegeneratingPatch(t *testing.T) {
 	observer := newRunObserver(nil, "root-span")
 	ctx := ContextWithRunObserver(context.Background(), observer)
 	middleware := &toolOrchestratorMiddleware{agentKind: AgentKindIDE}
@@ -263,13 +263,13 @@ func TestToolOrchestratorRepairsMissingEditFilePathWithoutRegeneratingPatch(t *t
 			calls = append(calls, args)
 			return "applied", nil
 		},
-		&adk.ToolContext{Name: "edit_file", CallID: "call-edit"},
+		&adk.ToolContext{Name: "replace_lines", CallID: "call-edit"},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	first := `{"edits":[{"old_string":"旧句","new_string":"新句"}],"file_revision":"sha256:old"}`
+	first := `{"replacements":[{"start_line":2,"content":"新句"}],"file_revision":"sha256:old"}`
 	result, err := endpoint(ctx, first)
 	if err != nil {
 		t.Fatal(err)
@@ -285,7 +285,7 @@ func TestToolOrchestratorRepairsMissingEditFilePathWithoutRegeneratingPatch(t *t
 	if err != nil || result != "applied" {
 		t.Fatalf("repaired edit result=%q err=%v", result, err)
 	}
-	if len(calls) != 1 || !strings.Contains(calls[0], `"file_path":"chapters/ch01.md"`) || !strings.Contains(calls[0], `"old_string":"旧句"`) {
+	if len(calls) != 1 || !strings.Contains(calls[0], `"file_path":"chapters/ch01.md"`) || !strings.Contains(calls[0], `"content":"新句"`) {
 		t.Fatalf("repaired arguments did not preserve the patch: %#v", calls)
 	}
 
@@ -598,14 +598,14 @@ func TestNewFilesystemMiddlewareRespectsToolSettings(t *testing.T) {
 		}
 		names[info.Name] = true
 	}
-	for _, name := range []string{"ls", "read_file", "glob", "grep"} {
+	for _, name := range []string{"ls", "read_file", "grep"} {
 		if !names[name] {
 			t.Fatalf("read tool %s should be registered, names=%v", name, names)
 		}
 	}
-	for _, name := range []string{"write_file", "edit_file", "execute"} {
-		if !names[name] {
-			t.Fatalf("tool %s should keep a stable schema and be blocked by orchestrator, names=%v", name, names)
+	for _, name := range []string{"glob", "execute", "write_file", "replace_lines", "replace_text"} {
+		if names[name] {
+			t.Fatalf("disabled tool %s must not consume model schema, names=%v", name, names)
 		}
 	}
 }

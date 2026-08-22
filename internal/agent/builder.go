@@ -148,6 +148,14 @@ type deepAgentSpec struct {
 func buildDeepAgent(ctx context.Context, cfg *config.Config, spec deepAgentSpec) (adk.Agent, error) {
 	modelCfg := chatModelConfigForAgent(cfg, spec.Kind)
 	toolSettings := config.ResolveAgentTools(cfg, spec.Kind)
+	extraTools := append([]tool.BaseTool(nil), spec.ExtraTools...)
+	if toolSettings.Todo && !spec.DisableWriteTodos {
+		todoTool, err := newCompactWriteTodosTool()
+		if err != nil {
+			return nil, fmt.Errorf("创建待办工具失败: %w", err)
+		}
+		extraTools = append(extraTools, todoTool)
+	}
 	cm, err := openai.NewChatModel(ctx, &modelCfg)
 	if err != nil {
 		return nil, fmt.Errorf("创建模型失败: %w", err)
@@ -162,7 +170,7 @@ func buildDeepAgent(ctx context.Context, cfg *config.Config, spec deepAgentSpec)
 		ToolSettings:      toolSettings,
 		EnableSkills:      spec.EnableSkills,
 		ExtraHandlers:     spec.ExtraHandlers,
-		ExtraTools:        spec.ExtraTools,
+		ExtraTools:        extraTools,
 		ExtraToolsFactory: spec.ExtraToolsFactory,
 		IncludeCompaction: true,
 	})
@@ -175,15 +183,16 @@ func buildDeepAgent(ctx context.Context, cfg *config.Config, spec deepAgentSpec)
 	}
 
 	return newDeepAgent(ctx, &deep.Config{
-		Name:                   spec.Name,
-		Description:            spec.Description,
-		ChatModel:              chatModel,
-		Instruction:            spec.Instruction,
-		SubAgents:              subAgents,
-		WithoutWriteTodos:      spec.DisableWriteTodos || !toolSettings.Todo,
-		WithoutGeneralSubAgent: !config.GeneralSubAgentEnabled(cfg, spec.Kind),
-		MaxIteration:           configMaxIteration(cfg),
-		Handlers:               assembly.Handlers,
+		Name:                         spec.Name,
+		Description:                  spec.Description,
+		ChatModel:                    chatModel,
+		Instruction:                  spec.Instruction,
+		SubAgents:                    subAgents,
+		WithoutWriteTodos:            true,
+		WithoutGeneralSubAgent:       !config.GeneralSubAgentEnabled(cfg, spec.Kind),
+		TaskToolDescriptionGenerator: compactTaskToolDescription,
+		MaxIteration:                 configMaxIteration(cfg),
+		Handlers:                     assembly.Handlers,
 		ToolsConfig: adk.ToolsConfig{
 			EmitInternalEvents: true,
 			ToolsNodeConfig: compose.ToolsNodeConfig{
@@ -195,6 +204,36 @@ func buildDeepAgent(ctx context.Context, cfg *config.Config, spec deepAgentSpec)
 		},
 		ModelRetryConfig: modelRetryConfig(cfg, spec.ModelOutputGuard),
 	})
+}
+
+// compactTaskToolDescription keeps the task tool's routing contract next to
+// the actual available agents, without resending the upstream generic tutorial
+// on every writing request. The task implementation and its arguments remain
+// unchanged; this only reduces repeated schema prose.
+func compactTaskToolDescription(ctx context.Context, availableAgents []adk.Agent) (string, error) {
+	var sb strings.Builder
+	sb.WriteString("将明确的复杂或专业工作委派给一个已列出的 SubAgent。subagent_type 必须精确匹配名称；description 要写明用户目标、必要上下文/路径、允许的写入范围和期望交付物。仅在该 SubAgent 能带来明确专业价值时调用。\n可用 SubAgent：\n")
+	for _, candidate := range availableAgents {
+		if candidate == nil {
+			continue
+		}
+		name := strings.TrimSpace(candidate.Name(ctx))
+		if name == "" {
+			continue
+		}
+		description := []rune(strings.TrimSpace(candidate.Description(ctx)))
+		if len(description) > 240 {
+			description = append(description[:240], '…')
+		}
+		sb.WriteString("- ")
+		sb.WriteString(name)
+		if len(description) > 0 {
+			sb.WriteString(": ")
+			sb.WriteString(string(description))
+		}
+		sb.WriteByte('\n')
+	}
+	return strings.TrimSpace(sb.String()), nil
 }
 
 type chatModelAgentAssemblySpec struct {
@@ -290,6 +329,23 @@ func buildChatModelAgentAssembly(ctx context.Context, cfg *config.Config, spec c
 		})
 	}
 	toolRegistrations = append(toolRegistrations, agenttools.ToolRegistration{
+		Name: "workspace_replace_text",
+		Enabled: func(settings agenttools.Settings) bool {
+			return settings.FileWrite && strings.TrimSpace(workspace) != ""
+		},
+		Build: func(agenttools.Settings) ([]tool.BaseTool, error) {
+			changes, err := workspacechange.ForWorkspace(workspace)
+			if err != nil {
+				return nil, fmt.Errorf("创建 workspace change service 失败: %w", err)
+			}
+			replaceTextTool, err := newWorkspaceReplaceTextTool(changes)
+			if err != nil {
+				return nil, fmt.Errorf("创建 replace_text 工具失败: %w", err)
+			}
+			return []tool.BaseTool{replaceTextTool}, nil
+		},
+	})
+	toolRegistrations = append(toolRegistrations, agenttools.ToolRegistration{
 		Name:    "web_search",
 		Enabled: stableWebSearchSchemaAllowed(firstNonEmpty(spec.ToolPolicyKind, spec.Kind)),
 		Build: func(agenttools.Settings) ([]tool.BaseTool, error) {
@@ -339,12 +395,43 @@ func newSkillMiddleware(ctx context.Context, cfg *config.Config, agentKind strin
 	if len(availableSkills) == 0 {
 		return nil, nil
 	}
-	skillMw, err := skill.NewMiddleware(ctx, &skill.Config{Backend: skillBackend})
+	skillMw, err := skill.NewMiddleware(ctx, &skill.Config{
+		Backend:               skillBackend,
+		CustomSystemPrompt:    compactSkillSystemPrompt,
+		CustomToolDescription: compactSkillToolDescription,
+	})
 	if err != nil {
 		log.Printf("[agent] 创建 Skill middleware 失败 agent=%s err=%v", agentKind, err)
 		return nil, nil
 	}
 	return skillMw, nil
+}
+
+func compactSkillSystemPrompt(_ context.Context, toolName string) string {
+	return fmt.Sprintf("任务确实匹配可用 Skill 时，先调用 `%s` 加载完整指令并遵守；不要仅在回复中提及 Skill。已内联到本轮消息的 Writing Skill 无需再次调用。", toolName)
+}
+
+func compactSkillToolDescription(_ context.Context, available []skill.FrontMatter) string {
+	var sb strings.Builder
+	sb.WriteString("按名称加载一个可用 Skill 的完整指令；仅在任务与其用途匹配时调用。可用 Skill：\n")
+	for _, item := range available {
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			continue
+		}
+		description := []rune(strings.TrimSpace(item.Description))
+		if len(description) > 180 {
+			description = append(description[:180], '…')
+		}
+		sb.WriteString("- ")
+		sb.WriteString(name)
+		if len(description) > 0 {
+			sb.WriteString(": ")
+			sb.WriteString(string(description))
+		}
+		sb.WriteByte('\n')
+	}
+	return strings.TrimSpace(sb.String())
 }
 
 func availableSubAgentIDs(cfg *config.Config, parentKind string) map[string]bool {
@@ -647,8 +734,8 @@ func newFilesystemMiddleware(ctx context.Context, backend filesystem.Backend, st
 		return nil, fmt.Errorf("创建 read_file 工具失败: %w", err)
 	}
 	readToolConfig := &filesystemmw.ToolConfig{CustomTool: readTool}
-	writeToolConfig := &filesystemmw.ToolConfig{}
-	editToolConfig := &filesystemmw.ToolConfig{}
+	writeToolConfig := &filesystemmw.ToolConfig{Disable: !settings.FileWrite}
+	editToolConfig := &filesystemmw.ToolConfig{Disable: !settings.FileWrite}
 	if workspace != "" && settings.FileWrite {
 		changes, err := workspacechange.ForWorkspace(workspace)
 		if err != nil {
@@ -658,23 +745,26 @@ func newFilesystemMiddleware(ctx context.Context, backend filesystem.Backend, st
 		if err != nil {
 			return nil, fmt.Errorf("创建 write_file 工具失败: %w", err)
 		}
-		editTool, err := newWorkspaceEditFileTool(changes)
+		replaceLinesTool, err := newWorkspaceReplaceLinesTool(changes)
 		if err != nil {
-			return nil, fmt.Errorf("创建 edit_file 工具失败: %w", err)
+			return nil, fmt.Errorf("创建 replace_lines 工具失败: %w", err)
 		}
 		writeToolConfig.CustomTool = writeTool
-		editToolConfig.CustomTool = editTool
+		editToolConfig.CustomTool = replaceLinesTool
 	}
 	mwConfig := &filesystemmw.MiddlewareConfig{
-		Backend:             backend,
-		LsToolConfig:        &filesystemmw.ToolConfig{},
-		ReadFileToolConfig:  readToolConfig,
-		GlobToolConfig:      &filesystemmw.ToolConfig{},
+		Backend:            backend,
+		LsToolConfig:       &filesystemmw.ToolConfig{},
+		ReadFileToolConfig: readToolConfig,
+		// Writing workspaces already expose their bounded chapter paths through ls.
+		// Keep recursive filename matching out of the model schema; grep/read_file
+		// cover the two remaining retrieval intents without overlapping ls.
+		GlobToolConfig:      &filesystemmw.ToolConfig{Disable: true},
 		GrepToolConfig:      &filesystemmw.ToolConfig{},
 		WriteFileToolConfig: writeToolConfig,
 		EditFileToolConfig:  editToolConfig,
 	}
-	if streamingShell != nil {
+	if settings.ShellExecute && streamingShell != nil {
 		mwConfig.StreamingShell = streamingShell
 	}
 	return filesystemmw.New(ctx, mwConfig)

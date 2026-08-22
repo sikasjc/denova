@@ -48,21 +48,21 @@ func TestReadFileRevisionAnchorReflectsMutations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	editTool, err := newWorkspaceEditFileTool(service)
+	editTool, err := newWorkspaceReplaceLinesTool(service)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if revision := readMetadataRevision(t, readTool, path); revision != workspacechange.Revision([]byte(original)) {
 		t.Fatalf("initial anchor = %q", revision)
 	}
-	if _, err := editTool.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"ideas.md","edits":[{"old_string":"second","new_string":"SECOND LINE"}]}`); err != nil {
+	if _, err := editTool.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"ideas.md","file_revision":"`+workspacechange.Revision([]byte(original))+`","replacements":[{"start_line":2,"content":"SECOND LINE"}]}`); err != nil {
 		t.Fatal(err)
 	}
 	const edited = "first\nSECOND LINE\n"
 	// A successful edit must seed the anchor for the committed revision instead
 	// of forcing the next read to re-hash the whole file.
 	if cached, ok := workspaceRevisionAnchors.Load(path); !ok {
-		t.Fatal("edit_file did not seed the revision anchor cache")
+		t.Fatal("replace_lines did not seed the revision anchor cache")
 	} else if anchor := cached.(workspaceRevisionAnchor); anchor.revision != workspacechange.Revision([]byte(edited)) {
 		t.Fatalf("seeded anchor = %+v", anchor)
 	}
@@ -99,7 +99,7 @@ func TestWorkspaceRevisionResolverDetectsExternalChanges(t *testing.T) {
 	}
 }
 
-func TestEditFileReceiptReportsLineRanges(t *testing.T) {
+func TestReplaceLinesReceiptReportsLineRanges(t *testing.T) {
 	workspace := t.TempDir()
 	path := filepath.Join(workspace, "ideas.md")
 	const original = "one\ntwo\nthree\n"
@@ -110,11 +110,11 @@ func TestEditFileReceiptReportsLineRanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	editTool, err := newWorkspaceEditFileTool(service)
+	editTool, err := newWorkspaceReplaceLinesTool(service)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := editTool.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"ideas.md","file_revision":"`+workspacechange.Revision([]byte(original))+`","edits":[{"start_line":2,"new_string":"TWO\nTWO-B"}]}`)
+	result, err := editTool.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"ideas.md","file_revision":"`+workspacechange.Revision([]byte(original))+`","replacements":[{"start_line":2,"content":"TWO\nTWO-B"}]}`)
 	if err != nil {
 		t.Fatal(err)
 	}

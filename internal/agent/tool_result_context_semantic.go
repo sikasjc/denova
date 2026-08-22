@@ -184,7 +184,7 @@ func retainedSkillReceipt(content string) string {
 func semanticToolCallContextArguments(toolName, arguments string) string {
 	name := normalizeToolName(toolName)
 	switch name {
-	case "write_file", "edit_file", "write_lore_items":
+	case "write_file", "replace_lines", "replace_text", "write_lore_items":
 	default:
 		return arguments
 	}
@@ -201,12 +201,19 @@ func semanticToolCallContextArguments(toolName, arguments string) string {
 		if _, ok := payload["content"].(string); !ok {
 			return arguments
 		}
-	} else if name == "edit_file" {
-		edits, ok := payload["edits"].([]any)
+	} else if name == "replace_lines" {
+		edits, ok := payload["replacements"].([]any)
 		if !ok || len(edits) == 0 {
 			return arguments
 		}
 		operationCount = len(edits)
+	} else if name == "replace_text" {
+		if _, ok := payload["find"].(string); !ok {
+			return arguments
+		}
+		if _, ok := payload["replace"].(string); !ok {
+			return arguments
+		}
 	} else if name == "write_lore_items" {
 		items, _ := payload["items"].([]any)
 		deleted, _ := payload["delete_ids"].([]any)
@@ -231,7 +238,7 @@ func semanticToolCallContextArguments(toolName, arguments string) string {
 
 func shouldProjectToolCallContextArguments(toolName, resultContent string) bool {
 	switch normalizeToolName(toolName) {
-	case "write_file", "edit_file":
+	case "write_file", "replace_lines", "replace_text":
 		receipt, ok := parseWorkspaceChangeToolReceipt(toolName, resultContent)
 		return ok &&
 			strings.EqualFold(strings.TrimSpace(receipt.Status), "applied") &&
@@ -346,7 +353,7 @@ func filterSemanticToolContextMessages(messages []*schema.Message, policy ToolRe
 	// Decide which read_file bodies stay usable. Scanning newest→oldest lets
 	// the freshest prose win the byte budget. An unchanged file keeps the exact
 	// body the model already saw (byte-identical reusable prefix). A file that
-	// changed — most often through the model's own edit_file / write_file — is
+	// changed — most often through the model's own replace_lines / write_file — is
 	// REFRESHED to its current window instead of collapsing: the model starts
 	// the turn with current line numbers and no reason to re-read. Refreshing
 	// needs a window resolver; without one, a changed body still collapses to a

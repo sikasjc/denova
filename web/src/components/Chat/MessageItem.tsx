@@ -973,7 +973,7 @@ function ToolExecutionBlock({ message }: { message: ChatMessage }) {
   const displayName = isDelegationTool ? t('chat.subagent.taskLabel') : name
   const detailArgs = isDelegationTool ? formatTaskDelegationArgs(rawArgs) : (isChapterBodyHidden ? '' : args)
   const hasResult = status === 'success'
-  const batchEditCount = name === 'edit_file' ? extractBatchEditCount(rawArgs) : 0
+  const batchEditCount = name === 'replace_lines' ? extractBatchEditCount(rawArgs) : 0
   const batchEditSummary = batchEditCount > 0
     ? [extractToolArgPath(rawArgs), t('chat.tool.batchEdits', { count: batchEditCount })].filter(Boolean).join(' · ')
     : ''
@@ -1505,19 +1505,19 @@ function buildToolArgSummary(args: string) {
   return buildPreview(args, 120)
 }
 
-/** edit_file 的 edits 数组是结构化批量改动，不把 new_string 当成流式正文展开。 */
+/** replace_lines 的 replacements 数组是结构化批量改动，不把 content 当成流式正文展开。 */
 function extractBatchEditCount(args: string): number {
-  if (!args || !/"edits"\s*:/.test(args)) return 0
+  if (!args || !/"replacements"\s*:/.test(args)) return 0
   try {
-    const data = JSON.parse(args) as { edits?: unknown[] }
-    return Array.isArray(data.edits) ? data.edits.length : 0
+    const data = JSON.parse(args) as { replacements?: unknown[] }
+    return Array.isArray(data.replacements) ? data.replacements.length : 0
   } catch {
-    const editsStart = args.search(/"edits"\s*:\s*\[/)
-    if (editsStart < 0) return 0
-    const partialEdits = args.slice(editsStart)
+    const replacementsStart = args.search(/"replacements"\s*:\s*\[/)
+    if (replacementsStart < 0) return 0
+    const partialReplacements = args.slice(replacementsStart)
     return Math.max(
-      (partialEdits.match(/"old_string"\s*:/g) || []).length,
-      (partialEdits.match(/"new_string"\s*:/g) || []).length,
+      (partialReplacements.match(/"content"\s*:/g) || []).length,
+      (partialReplacements.match(/"start_line"\s*:/g) || []).length,
     )
   }
 }
@@ -1548,7 +1548,7 @@ function buildMarkdownPreview(content: string, maxLength: number) {
 
 /** 判断是否为会产生大量内容参数的工具（适合流式预览） */
 function isContentTool(name: string): boolean {
-  return ['write_file', 'edit_file'].includes(name)
+  return ['write_file', 'replace_lines'].includes(name)
 }
 
 /** 从不完整的 JSON args 中提取 content/new_string 字段的流式文本 */

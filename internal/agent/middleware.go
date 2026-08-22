@@ -74,7 +74,7 @@ func (m *interactiveDirectorPlanFileMiddleware) blockedDirectorToolMessage(name,
 	switch name {
 	case "read_event_cards", "list_lore_items", "read_lore_items", "search_story_history", submitDirectorPlanUpdateToolName:
 		return ""
-	case "read_file", "write_file", "edit_file":
+	case "read_file", "write_file", "replace_lines", "replace_text":
 		return fmt.Sprintf("[tool error] Director 规划文档已在上下文中完整提供；请用 %s 提交带 base_hash 的 Markdown Patch，拒绝工具: %s", submitDirectorPlanUpdateToolName, name)
 	case "apply_actor_state_patch":
 		return fmt.Sprintf("[tool error] Director 只维护 ArcPlan，不能写 Actor State，拒绝工具: %s", name)
@@ -119,11 +119,12 @@ func toolName(toolCtx *adk.ToolContext) string {
 func isInteractiveStoryWriteTool(name string) bool {
 	name = strings.ToLower(strings.TrimSpace(name))
 	switch name {
-	case "write_file", "edit_file", "delete_file", "create_file", "move_file", "copy_file", "rename_file", "mkdir", "remove_file":
+	case "write_file", "replace_lines", "replace_text", "delete_file", "create_file", "move_file", "copy_file", "rename_file", "mkdir", "remove_file":
 		return true
 	}
 	return strings.HasPrefix(name, "write_") ||
 		strings.HasPrefix(name, "edit_") ||
+		strings.HasPrefix(name, "replace_") ||
 		strings.HasPrefix(name, "delete_") ||
 		strings.HasPrefix(name, "create_") ||
 		strings.HasPrefix(name, "move_") ||

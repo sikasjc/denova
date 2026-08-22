@@ -17,14 +17,17 @@ import (
 	"denova/internal/workspacechange"
 )
 
-var workspaceEditFileToolDescription = strings.TrimSpace(`Apply non-overlapping edits to one workspace file as one reviewed change.
-- edits is a LIST: put every change you want to make to this file in ONE call. All edits resolve against the same original snapshot, so line numbers and old_string all come from that one read and do not shift between items in the same call.
-- Prefer start_line/end_line with new_string. Lines are 1-based and inclusive; copy read_file metadata revision to file_revision. An empty new_string deletes the selected lines.
-- Use old_string/new_string only for partial-line edits or replace_all. Copy old_string exactly from the latest read_file body.
-- file_revision is the file's content hash and CHANGES on every successful write. Never reuse the revision you just sent: each successful edit_file and write_file result returns the file's new revision, so take file_revision for a follow-up call from that result. Copy it verbatim, with no prefix and no truncation.
-- Re-read only when current numbered content is missing or a revision conflict is returned. Never recover by replacing the whole file.`)
+var workspaceReplaceLinesToolDescription = strings.TrimSpace(`Replace one or more non-overlapping complete line ranges in one workspace file as one reviewed change.
+- Read the file first. Lines are 1-based and inclusive; copy that read_file revision verbatim into file_revision. Every replacement is resolved against that same original snapshot, so ranges never shift within this call.
+- content is required. Use an empty string only to delete the selected lines. For an insertion, replace one adjacent line with the desired content plus that retained line.
+- Batch all independent changes to this file in replacements. Re-read only when a revision conflict is returned or the current numbered body is unavailable; never recover by overwriting the whole file.`)
 
-var workspaceWriteFileToolDescription = strings.TrimSpace(`Replace one workspace file completely as a reviewed change. Use edit_file for localized changes; use write_file only for a new file or an explicitly requested full rewrite. A failed edit does not authorize overwriting an existing file.`)
+var workspaceReplaceTextToolDescription = strings.TrimSpace(`Replace every literal occurrence of one short, already-inspected text in one workspace file as a reviewed change.
+- Use only for deliberate bulk renames or terminology changes, not prose rewriting. It applies to the file's current snapshot, so a read first is helpful but not required.
+- find must be non-empty; replace is the new literal text. Every current literal occurrence is replaced in one reviewed change. The call may be attempted from context or a guessed term; if no occurrence exists, it returns an error without changing the file.
+- For selected prose ranges use replace_lines; for a whole-file rewrite use write_file.`)
+
+var workspaceWriteFileToolDescription = strings.TrimSpace(`Replace one workspace file completely as a reviewed change. Use replace_lines for localized changes and replace_text for guarded literal bulk changes; use write_file only for a new file or an explicitly requested full rewrite. A failed edit does not authorize overwriting an existing file.`)
 
 type workspaceChangeService interface {
 	Workspace() string
@@ -32,18 +35,22 @@ type workspaceChangeService interface {
 	ReplaceFile(context.Context, workspacechange.ReplaceFileRequest) (workspacechange.ChangeSet, error)
 }
 
-type workspaceEditFileInput struct {
-	FilePath     string                      `json:"file_path" jsonschema:"required,description=Workspace-relative or absolute file path"`
-	FileRevision string                      `json:"file_revision,omitempty" jsonschema:"description=Revision from the newest read_file/edit_file result; bare hex copied verbatim; required for line-based edits"`
-	Edits        []workspaceEditFileTextEdit `json:"edits" jsonschema:"required,description=JSON array of non-overlapping edits against one original snapshot; batch all edits to this file here"`
+type workspaceReplaceLinesInput struct {
+	FilePath     string                          `json:"file_path" jsonschema:"required,description=Workspace-relative or absolute file path"`
+	FileRevision string                          `json:"file_revision" jsonschema:"required,description=Revision from the newest read_file or workspace change result; copy it verbatim"`
+	Replacements []workspaceLineRangeReplacement `json:"replacements" jsonschema:"required,description=JSON array of non-overlapping complete-line replacements against one original snapshot"`
 }
 
-type workspaceEditFileTextEdit struct {
-	StartLine  int    `json:"start_line,omitempty" jsonschema:"description=1-based first complete source line to replace"`
-	EndLine    int    `json:"end_line,omitempty" jsonschema:"description=Inclusive last source line; defaults to start_line"`
-	OldString  string `json:"old_string,omitempty" jsonschema:"description=Exact text for partial-line edits or replace_all; mutually exclusive with line selectors"`
-	NewString  string `json:"new_string" jsonschema:"description=Replacement text; empty deletes the selection"`
-	ReplaceAll bool   `json:"replace_all,omitempty" jsonschema:"description=With old_string only, replace every exact occurrence"`
+type workspaceLineRangeReplacement struct {
+	StartLine int     `json:"start_line" jsonschema:"required,description=1-based first complete source line to replace"`
+	EndLine   int     `json:"end_line,omitempty" jsonschema:"description=Inclusive last source line; defaults to start_line"`
+	Content   *string `json:"content" jsonschema:"required,description=Replacement text; an explicit empty string deletes the selected lines"`
+}
+
+type workspaceReplaceTextInput struct {
+	FilePath string  `json:"file_path" jsonschema:"required,description=Workspace-relative or absolute file path"`
+	Find     string  `json:"find" jsonschema:"required,description=Non-empty literal text to replace exactly"`
+	Replace  *string `json:"replace" jsonschema:"required,description=Replacement literal text; may be explicitly empty only when intentionally deleting every matched occurrence"`
 }
 
 type workspaceWriteFileInput struct {
@@ -51,7 +58,7 @@ type workspaceWriteFileInput struct {
 	Content  string `json:"content" jsonschema:"description=Complete replacement content"`
 }
 
-func newWorkspaceEditFileTool(changes workspaceChangeService) (tool.BaseTool, error) {
+func newWorkspaceReplaceLinesTool(changes workspaceChangeService) (tool.BaseTool, error) {
 	if changes == nil {
 		return nil, fmt.Errorf("workspace change service is nil")
 	}
@@ -59,23 +66,15 @@ func newWorkspaceEditFileTool(changes workspaceChangeService) (tool.BaseTool, er
 	if err != nil {
 		return nil, err
 	}
-	return utils.InferTool("edit_file", workspaceEditFileToolDescription, func(ctx context.Context, input workspaceEditFileInput) (string, error) {
+	return utils.InferTool("replace_lines", workspaceReplaceLinesToolDescription, func(ctx context.Context, input workspaceReplaceLinesInput) (string, error) {
 		baseRevision := strings.TrimSpace(input.FileRevision)
-		lineEdits, exactEdits := 0, 0
-		for _, edit := range input.Edits {
-			if edit.StartLine != 0 || edit.EndLine != 0 {
-				lineEdits++
-			} else {
-				exactEdits++
-			}
-		}
 		logger := observability.Logger("agent-tool")
-		logger.Info("edit_file_called", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.Int("edits", len(input.Edits)), slog.Int("line_edits", lineEdits), slog.Int("exact_edits", exactEdits), slog.Bool("model_file_revision", baseRevision != ""))
-		if containsLineBasedEdit(input.Edits) && baseRevision == "" {
-			logger.Warn("edit_file_missing_file_revision", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.Int("line_edits", lineEdits))
+		logger.Info("replace_lines_called", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.Int("replacements", len(input.Replacements)), slog.Bool("model_file_revision", baseRevision != ""))
+		if baseRevision == "" {
+			logger.Warn("replace_lines_missing_file_revision", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.Int("replacements", len(input.Replacements)))
 			return "", &workspacechange.Error{
 				Code:    workspacechange.ErrorCodeInvalidEdit,
-				Message: "缺少 file_revision：请从最近一次 read_file、edit_file 或 write_file 结果中获取。",
+				Message: "缺少 file_revision：请从最近一次 read_file、replace_lines 或 write_file 结果中获取。",
 				Details: map[string]any{
 					"path":              input.FilePath,
 					"field":             "file_revision",
@@ -83,18 +82,23 @@ func newWorkspaceEditFileTool(changes workspaceChangeService) (tool.BaseTool, er
 				},
 			}
 		}
-		// Exact-only edits may omit file_revision: the service resolves the base
-		// from the current snapshot under its own lock, and old_string matching
-		// is the freshness anchor. Skipping the pre-read removes one full
-		// read + hash per call.
-		edits := make([]workspacechange.TextEdit, 0, len(input.Edits))
-		for _, edit := range input.Edits {
+		edits := make([]workspacechange.TextEdit, 0, len(input.Replacements))
+		for index, replacement := range input.Replacements {
+			if replacement.Content == nil {
+				return "", &workspacechange.Error{
+					Code:    workspacechange.ErrorCodeInvalidEdit,
+					Message: "缺少 content：请显式传入替换文本；删除行时传 content 为 \"\"。",
+					Details: map[string]any{
+						"path":              input.FilePath,
+						"field":             fmt.Sprintf("replacements[%d].content", index),
+						"workspace_mutated": false,
+					},
+				}
+			}
 			edits = append(edits, workspacechange.TextEdit{
-				StartLine:  edit.StartLine,
-				EndLine:    edit.EndLine,
-				OldString:  edit.OldString,
-				NewString:  edit.NewString,
-				ReplaceAll: edit.ReplaceAll,
+				StartLine: replacement.StartLine,
+				EndLine:   replacement.EndLine,
+				NewString: *replacement.Content,
 			})
 		}
 		changeSet, err := changes.ApplyEdits(ctx, workspacechange.ApplyEditsRequest{
@@ -105,22 +109,56 @@ func newWorkspaceEditFileTool(changes workspaceChangeService) (tool.BaseTool, er
 		})
 		if err != nil {
 			code, expectedRevision, actualRevision := workspaceChangeErrorDiagnostics(err)
-			logger.Warn("edit_file_failed", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.Int("line_edits", lineEdits), slog.Int("exact_edits", exactEdits), slog.String("error_code", code), slog.String("expected_revision", expectedRevision), slog.String("actual_revision", actualRevision), slog.Any("error", err))
+			logger.Warn("replace_lines_failed", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.Int("replacements", len(input.Replacements)), slog.String("error_code", code), slog.String("expected_revision", expectedRevision), slog.String("actual_revision", actualRevision), slog.Any("error", err))
 			return "", err
 		}
-		logger.Info("edit_file_applied", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.Int("line_edits", lineEdits), slog.Int("exact_edits", exactEdits), slog.String("change_set_id", changeSet.ID), slog.String("review_status", changeSet.ReviewStatus))
+		logger.Info("replace_lines_applied", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.Int("replacements", len(input.Replacements)), slog.String("change_set_id", changeSet.ID), slog.String("review_status", changeSet.ReviewStatus))
 		rememberWorkspaceFileRevision(workspace, changeSet.Path, changeSet.Revision)
 		return marshalWorkspaceChangeToolReceipt(workspace, changeSet)
 	})
 }
 
-func containsLineBasedEdit(edits []workspaceEditFileTextEdit) bool {
-	for _, edit := range edits {
-		if edit.StartLine != 0 || edit.EndLine != 0 {
-			return true
-		}
+func newWorkspaceReplaceTextTool(changes workspaceChangeService) (tool.BaseTool, error) {
+	if changes == nil {
+		return nil, fmt.Errorf("workspace change service is nil")
 	}
-	return false
+	workspace, err := canonicalChangeWorkspace(changes)
+	if err != nil {
+		return nil, err
+	}
+	return utils.InferTool("replace_text", workspaceReplaceTextToolDescription, func(ctx context.Context, input workspaceReplaceTextInput) (string, error) {
+		logger := observability.Logger("agent-tool")
+		logger.Info("replace_text_called", slog.String("workspace", workspace), slog.String("path", input.FilePath))
+		if input.Replace == nil {
+			return "", &workspacechange.Error{
+				Code:    workspacechange.ErrorCodeInvalidEdit,
+				Message: "缺少 replace：请显式传入替换文本；批量删除时传 replace 为 \"\"。",
+				Details: map[string]any{
+					"path":              input.FilePath,
+					"field":             "replace",
+					"workspace_mutated": false,
+				},
+			}
+		}
+		changeSet, err := changes.ApplyEdits(ctx, workspacechange.ApplyEditsRequest{
+			Path: input.FilePath,
+			Edits: []workspacechange.TextEdit{{
+				ID:         "replace_text",
+				OldString:  input.Find,
+				NewString:  *input.Replace,
+				ReplaceAll: true,
+			}},
+			Metadata: workspaceChangeMetadata(ctx),
+		})
+		if err != nil {
+			code, expectedRevision, actualRevision := workspaceChangeErrorDiagnostics(err)
+			logger.Warn("replace_text_failed", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.String("error_code", code), slog.String("expected_revision", expectedRevision), slog.String("actual_revision", actualRevision), slog.Any("error", err))
+			return "", err
+		}
+		logger.Info("replace_text_applied", slog.String("workspace", workspace), slog.String("path", input.FilePath), slog.String("change_set_id", changeSet.ID), slog.String("review_status", changeSet.ReviewStatus))
+		rememberWorkspaceFileRevision(workspace, changeSet.Path, changeSet.Revision)
+		return marshalWorkspaceChangeToolReceipt(workspace, changeSet)
+	})
 }
 
 func newWorkspaceWriteFileTool(changes workspaceChangeService) (tool.BaseTool, error) {

@@ -64,7 +64,7 @@ func DefaultAgentToolSettings() AgentToolSettings {
 		Default: AgentToolOverride{
 			FileRead:         on,
 			FileWrite:        on,
-			ShellExecute:     on,
+			ShellExecute:     off,
 			Skills:           on,
 			LoreRead:         on,
 			LoreWrite:        on,

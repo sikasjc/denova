@@ -180,6 +180,34 @@ func (c *SessionConversation) ContextSourceSummary() string {
 	return agentcontext.SourceSummary(c.runtimeContextSources(), defaultContextLedgerPreviewChars)
 }
 
+// ContextLedgerPartsForMessages records the workspace sources that survived
+// compaction in the exact final model message list. The runtime stores only
+// bounded metadata, never the full workspace content, in the run trace.
+func (c *SessionConversation) ContextLedgerPartsForMessages(messages []*schema.Message) []ContextLedgerPart {
+	if c == nil {
+		return nil
+	}
+	// This reporter is invoked after the runtime has already decided to emit a
+	// context ledger. Use the normal runtime policy rather than a zero-value
+	// disabled policy so final workspace sources are auditable in the trace.
+	ledger := NewContextLedger(DefaultLoopPolicy().ContextLedger)
+	for _, source := range c.runtimeContextSources() {
+		content := strings.TrimSpace(source.Content)
+		if content == "" {
+			continue
+		}
+		included := false
+		for _, message := range messages {
+			if message != nil && strings.Contains(message.Content, content) {
+				included = true
+				break
+			}
+		}
+		ledger.AddPart(source.Source, source.Title, source.Purpose, content, source.Note, included, !included, source.Limit)
+	}
+	return ledger.Parts()
+}
+
 func (c *SessionConversation) CompactContextIfNeeded(ctx context.Context, input ContextCompactionInput) ([]*schema.Message, ContextCompactionResult, error) {
 	policy := c.compactionPolicy()
 	input = withDefaultContextProjectionReserves(c.cfg, c.agentKind, input, 0)

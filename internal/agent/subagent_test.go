@@ -7,6 +7,7 @@ import (
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/prebuilt/deep"
+	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
 	"denova/config"
@@ -158,6 +159,13 @@ func TestBuildDeepAgentIncludesConfiguredSubAgents(t *testing.T) {
 	if strings.Join(got, ",") != "reviewer,writer" {
 		t.Fatalf("unexpected wired subagents: %#v", got)
 	}
+	description, err := captured.TaskToolDescriptionGenerator(context.Background(), captured.SubAgents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(description, "reviewer: review") || !strings.Contains(description, "writer: write") || len([]rune(description)) > 700 {
+		t.Fatalf("task tool description must preserve available agents in a bounded form: %q", description)
+	}
 }
 
 func TestAvailableSubAgentIDsRespectParentAndEnabledState(t *testing.T) {
@@ -290,6 +298,48 @@ func TestBuildChatModelAgentAssemblyPassesToolResultLimit(t *testing.T) {
 	}
 	if got := orchestrator.toolResultLimitBytes(); got != 64*1024 {
 		t.Fatalf("tool result limit bytes = %d, want %d", got, 64*1024)
+	}
+}
+
+func TestWritingAssemblyPublishesReplacementToolsInsteadOfEditFile(t *testing.T) {
+	assembly, err := buildChatModelAgentAssembly(context.Background(), &config.Config{Workspace: t.TempDir()}, chatModelAgentAssemblySpec{
+		Kind: config.AgentKindIDE,
+		ToolSettings: config.ResolvedAgentToolSettings{
+			FileRead:  true,
+			FileWrite: true,
+		},
+		IncludeCompaction: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCtx := &adk.ChatModelAgentContext{Tools: append([]tool.BaseTool(nil), assembly.Tools...)}
+	for _, handler := range assembly.Handlers {
+		_, runCtx, err = handler.BeforeAgent(context.Background(), runCtx)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	names := make(map[string]bool, len(runCtx.Tools))
+	for _, base := range runCtx.Tools {
+		info, err := base.Info(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		names[info.Name] = true
+	}
+	for _, expected := range []string{"replace_lines", "replace_text", "write_file"} {
+		if !names[expected] {
+			t.Fatalf("missing workspace write tool %q: %v", expected, names)
+		}
+	}
+	if names["edit_file"] {
+		t.Fatalf("legacy edit_file must not remain model-visible: %v", names)
+	}
+	for _, absent := range []string{"glob", "execute"} {
+		if names[absent] {
+			t.Fatalf("default writing assembly must not expose %q: %v", absent, names)
+		}
 	}
 }
 

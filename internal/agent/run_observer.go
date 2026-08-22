@@ -98,7 +98,7 @@ func (o *RunObserver) LastLLMOutcome() LLMOutcome {
 }
 
 // pendingEditFileRepair is deliberately run-scoped and one-shot. It lets a
-// model repair a structurally incomplete edit_file call by sending the
+// model repair a structurally incomplete replace_lines call by sending the
 // missing path in a follow-up call, without retaining file content in the
 // conversation or allowing a stale patch to leak into another run.
 type pendingEditFileRepair struct {

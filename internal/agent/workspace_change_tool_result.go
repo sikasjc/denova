@@ -46,7 +46,7 @@ type workspaceChangeToolModelReceipt struct {
 
 // workspaceChangeToolResultForModel 将内部 receipt 转成模型可见版本：
 // 隐藏 base_revision（修改前快照），但保留修改后的 revision，
-// 让模型能把它作为下一次 edit_file 的 file_revision 链式编辑、免去重复读取。
+// 让模型能把它作为下一次 replace_lines 的 file_revision 链式编辑、免去重复读取。
 // 每个 edit 附带修改前后的行号区间，供模型推算后续行号而无需重读文件。
 func workspaceChangeToolResultForModel(toolName, content string) string {
 	receipt, ok := parseWorkspaceChangeToolReceipt(toolName, content)
@@ -101,7 +101,7 @@ func toolResultBody(content string) string {
 
 func isWorkspaceChangeReceiptTool(toolName string) bool {
 	switch normalizeToolName(toolName) {
-	case "edit_file", "write_file":
+	case "replace_lines", "replace_text", "write_file":
 		return true
 	default:
 		return false

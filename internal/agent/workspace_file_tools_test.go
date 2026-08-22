@@ -57,7 +57,7 @@ func (s *recordingWorkspaceChangeService) ReplaceFile(_ context.Context, request
 	return s.changeSet, s.err
 }
 
-func TestWorkspaceEditFileToolBatchesOneFileAndReturnsBoundedReceipt(t *testing.T) {
+func TestWorkspaceReplaceLinesToolBatchesOneFileAndReturnsBoundedReceipt(t *testing.T) {
 	service := &recordingWorkspaceChangeService{workspace: t.TempDir(), readRevision: "sha256:before", changeSet: workspacechange.ChangeSet{
 		ID:            "change-1",
 		GroupID:       "run-1",
@@ -79,22 +79,22 @@ func TestWorkspaceEditFileToolBatchesOneFileAndReturnsBoundedReceipt(t *testing.
 			Hunks: []workspacechange.Hunk{{ID: fmt.Sprintf("bulk-hunk-%d", index)}},
 		})
 	}
-	base, err := newWorkspaceEditFileTool(service)
+	base, err := newWorkspaceReplaceLinesTool(service)
 	if err != nil {
 		t.Fatal(err)
 	}
 	invokable, ok := base.(tool.InvokableTool)
 	if !ok {
-		t.Fatal("edit_file should be invokable")
+		t.Fatal("replace_lines should be invokable")
 	}
 	observer := newRunObserver(&RunLedger{id: "run-1"}, "")
 	ctx := ContextWithRunObserver(context.Background(), observer)
 	result, err := invokable.InvokableRun(ctx, `{
         "file_path":"chapters/ch01.md",
         "file_revision":"sha256:before",
-        "edits":[
-          {"id":"opening","start_line":12,"end_line":14,"new_string":"new 1"},
-          {"id":"ending","old_string":"old 2","new_string":"new 2","replace_all":true}
+        "replacements":[
+          {"start_line":12,"end_line":14,"content":"new 1"},
+          {"start_line":20,"content":"new 2"}
         ]
       }`)
 	if err != nil {
@@ -106,7 +106,8 @@ func TestWorkspaceEditFileToolBatchesOneFileAndReturnsBoundedReceipt(t *testing.
 	if len(service.applyRequest.Edits) != 2 ||
 		service.applyRequest.Edits[0].StartLine != 12 ||
 		service.applyRequest.Edits[0].EndLine != 14 ||
-		!service.applyRequest.Edits[1].ReplaceAll {
+		service.applyRequest.Edits[1].StartLine != 20 ||
+		service.applyRequest.Edits[1].NewString != "new 2" {
 		t.Fatalf("batch edits were not preserved: %#v", service.applyRequest.Edits)
 	}
 	if service.applyRequest.Metadata.Origin != workspacechange.OriginAgent ||
@@ -130,19 +131,22 @@ func TestWorkspaceEditFileToolBatchesOneFileAndReturnsBoundedReceipt(t *testing.
 }
 
 func TestWorkspaceFileToolDescriptionsStayCompactAndPreserveSafetyRules(t *testing.T) {
-	if len(workspaceEditFileToolDescription) > 1200 {
-		t.Fatalf("edit_file description is too large: %d bytes", len(workspaceEditFileToolDescription))
+	if len(workspaceReplaceLinesToolDescription) > 1200 {
+		t.Fatalf("replace_lines description is too large: %d bytes", len(workspaceReplaceLinesToolDescription))
 	}
 	for _, expected := range []string{
-		"Prefer start_line/end_line",
-		"copy read_file metadata revision",
-		"Copy old_string exactly",
+		"Read the file first",
+		"file_revision",
+		"content is required",
 		"same original snapshot",
-		"Never recover by replacing the whole file",
+		"never recover by overwriting the whole file",
 	} {
-		if !strings.Contains(workspaceEditFileToolDescription, expected) {
-			t.Fatalf("edit_file description missing %q:\n%s", expected, workspaceEditFileToolDescription)
+		if !strings.Contains(workspaceReplaceLinesToolDescription, expected) {
+			t.Fatalf("replace_lines description missing %q:\n%s", expected, workspaceReplaceLinesToolDescription)
 		}
+	}
+	if len(workspaceReplaceTextToolDescription) > 1000 || !strings.Contains(workspaceReplaceTextToolDescription, "not required") {
+		t.Fatalf("replace_text description is not compact and safe: %s", workspaceReplaceTextToolDescription)
 	}
 	if len(workspaceWriteFileToolDescription) > 500 || !strings.Contains(workspaceWriteFileToolDescription, "failed edit does not authorize overwriting") {
 		t.Fatalf("write_file description is not compact and safe: %s", workspaceWriteFileToolDescription)
@@ -161,8 +165,8 @@ func TestWorkspaceChangeMetadataUsesStableRunIdentityWithoutLedger(t *testing.T)
 	}
 }
 
-func TestWorkspaceEditFileToolPublishesBatchSchema(t *testing.T) {
-	base, err := newWorkspaceEditFileTool(&recordingWorkspaceChangeService{workspace: t.TempDir()})
+func TestWorkspaceReplaceLinesToolPublishesBatchSchema(t *testing.T) {
+	base, err := newWorkspaceReplaceLinesTool(&recordingWorkspaceChangeService{workspace: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +187,7 @@ func TestWorkspaceEditFileToolPublishesBatchSchema(t *testing.T) {
 	if err := json.Unmarshal(data, &encoded); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"file_path", "file_revision", "edits"} {
+	for _, name := range []string{"file_path", "file_revision", "replacements"} {
 		if _, ok := encoded.JSONSchema.Properties[name]; !ok {
 			t.Fatalf("batch edit schema is missing root property %q: %s", name, data)
 		}
@@ -196,35 +200,40 @@ func TestWorkspaceEditFileToolPublishesBatchSchema(t *testing.T) {
 			t.Fatalf("legacy single-edit property %q remains at schema root: %s", legacy, data)
 		}
 	}
-	var editsProperty struct {
+	var replacementsProperty struct {
 		Items struct {
 			Properties map[string]json.RawMessage `json:"properties"`
 			Required   []string                   `json:"required"`
 		} `json:"items"`
 	}
-	if err := json.Unmarshal(encoded.JSONSchema.Properties["edits"], &editsProperty); err != nil {
+	if err := json.Unmarshal(encoded.JSONSchema.Properties["replacements"], &replacementsProperty); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"start_line", "end_line", "old_string", "new_string", "replace_all"} {
-		if _, ok := editsProperty.Items.Properties[name]; !ok {
-			t.Fatalf("edit item schema is missing %q: %s", name, data)
+	for _, name := range []string{"start_line", "end_line", "content"} {
+		if _, ok := replacementsProperty.Items.Properties[name]; !ok {
+			t.Fatalf("replacement item schema is missing %q: %s", name, data)
 		}
 	}
-	if containsStringValue(editsProperty.Items.Required, "old_string") {
-		t.Fatalf("old_string must be optional when line selectors are available: %s", data)
+	for _, legacy := range []string{"old_string", "new_string", "replace_all"} {
+		if _, ok := replacementsProperty.Items.Properties[legacy]; ok {
+			t.Fatalf("legacy replacement property %q remains visible: %s", legacy, data)
+		}
+	}
+	if !containsStringValue(replacementsProperty.Items.Required, "content") {
+		t.Fatalf("content must be required so omission cannot delete lines: %s", data)
 	}
 }
 
-func TestWorkspaceEditFileLineModeRequiresAndForwardsReadRevision(t *testing.T) {
+func TestWorkspaceReplaceLinesRequiresAndForwardsReadRevision(t *testing.T) {
 	service := &recordingWorkspaceChangeService{workspace: t.TempDir(), readRevision: "sha256:current"}
-	base, err := newWorkspaceEditFileTool(service)
+	base, err := newWorkspaceReplaceLinesTool(service)
 	if err != nil {
 		t.Fatal(err)
 	}
 	invokable := base.(tool.InvokableTool)
 	_, err = invokable.InvokableRun(context.Background(), `{
 		"file_path":"chapters/ch01.md",
-		"edits":[{"start_line":2,"new_string":"replacement"}]
+		"replacements":[{"start_line":2,"content":"replacement"}]
 	}`)
 	if err == nil || !strings.Contains(err.Error(), "file_revision") {
 		t.Fatalf("line edit without read revision should fail, got %v", err)
@@ -236,7 +245,7 @@ func TestWorkspaceEditFileLineModeRequiresAndForwardsReadRevision(t *testing.T) 
 	_, err = invokable.InvokableRun(context.Background(), `{
 		"file_path":"chapters/ch01.md",
 		"file_revision":"sha256:read-snapshot",
-		"edits":[{"start_line":2,"end_line":3,"new_string":"replacement"}]
+		"replacements":[{"start_line":2,"end_line":3,"content":"replacement"}]
 	}`)
 	if err != nil {
 		t.Fatal(err)
@@ -246,22 +255,82 @@ func TestWorkspaceEditFileLineModeRequiresAndForwardsReadRevision(t *testing.T) 
 	}
 }
 
-func TestWorkspaceEditFileTrimsRevisionWhitespaceOnly(t *testing.T) {
+func TestWorkspaceReplaceLinesTrimsRevisionWhitespaceOnly(t *testing.T) {
 	service := &recordingWorkspaceChangeService{workspace: t.TempDir()}
-	base, err := newWorkspaceEditFileTool(service)
+	base, err := newWorkspaceReplaceLinesTool(service)
 	if err != nil {
 		t.Fatal(err)
 	}
 	payload := `{
 		"file_path":"chapters/ch01.md",
 		"file_revision":"  abcdef12  ",
-		"edits":[{"start_line":2,"new_string":"replacement"}]
+		"replacements":[{"start_line":2,"content":"replacement"}]
 	}`
 	if _, err := base.(tool.InvokableTool).InvokableRun(context.Background(), payload); err != nil {
 		t.Fatal(err)
 	}
 	if service.applyRequest.BaseRevision != "abcdef12" {
 		t.Fatalf("revision = %q, want surrounding whitespace trimmed", service.applyRequest.BaseRevision)
+	}
+}
+
+func TestWorkspaceReplaceLinesRejectsMissingContent(t *testing.T) {
+	service := &recordingWorkspaceChangeService{workspace: t.TempDir()}
+	base, err := newWorkspaceReplaceLinesTool(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = base.(tool.InvokableTool).InvokableRun(context.Background(), `{
+		"file_path":"chapters/ch01.md",
+		"file_revision":"sha256:before",
+		"replacements":[{"start_line":2}]
+	}`)
+	if err == nil || !strings.Contains(err.Error(), "content") {
+		t.Fatalf("missing content should fail safely, got %v", err)
+	}
+	if service.applyCalls != 0 {
+		t.Fatalf("missing content must not mutate: %#v", service.applyRequest)
+	}
+}
+
+func TestWorkspaceReplaceTextToolForwardsLiteralReplacement(t *testing.T) {
+	service := &recordingWorkspaceChangeService{workspace: t.TempDir(), changeSet: workspacechange.ChangeSet{
+		ID: "change-text", Path: "chapters/ch01.md", Revision: "sha256:after", ReviewStatus: workspacechange.ReviewStatusPending, ApplyState: workspacechange.ApplyStateApplied,
+	}}
+	base, err := newWorkspaceReplaceTextTool(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = base.(tool.InvokableTool).InvokableRun(context.Background(), `{
+		"file_path":"chapters/ch01.md",
+		"find":"林晚",
+		"replace":"林晚晴"
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := service.applyRequest
+	if service.applyCalls != 1 || request.BaseRevision != "" || len(request.Edits) != 1 || request.Edits[0].OldString != "林晚" || request.Edits[0].NewString != "林晚晴" || !request.Edits[0].ReplaceAll {
+		t.Fatalf("replace_text did not forward a direct literal replacement: %#v", request)
+	}
+}
+
+func TestWorkspaceReplaceTextRejectsMissingReplacement(t *testing.T) {
+	service := &recordingWorkspaceChangeService{workspace: t.TempDir()}
+	base, err := newWorkspaceReplaceTextTool(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = base.(tool.InvokableTool).InvokableRun(context.Background(), `{
+		"file_path":"chapters/ch01.md",
+		"file_revision":"sha256:before",
+		"find":"林晚"
+	}`)
+	if err == nil || !strings.Contains(err.Error(), "replace") {
+		t.Fatalf("missing replacement should fail safely, got %v", err)
+	}
+	if service.applyCalls != 0 {
+		t.Fatalf("missing replacement must not mutate: %#v", service.applyRequest)
 	}
 }
 
@@ -329,7 +398,7 @@ func TestWorkspaceWriteFileToolHidesBaseRevisionFromSchema(t *testing.T) {
 	}
 }
 
-func TestWorkspaceEditFileToolLeavesFileUntouchedWhenOneBatchEditFails(t *testing.T) {
+func TestWorkspaceReplaceLinesLeavesFileUntouchedWhenOneBatchEditFails(t *testing.T) {
 	workspace := t.TempDir()
 	chapterDir := filepath.Join(workspace, "chapters")
 	if err := os.MkdirAll(chapterDir, 0o755); err != nil {
@@ -344,19 +413,20 @@ func TestWorkspaceEditFileToolLeavesFileUntouchedWhenOneBatchEditFails(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	base, err := newWorkspaceEditFileTool(service)
+	base, err := newWorkspaceReplaceLinesTool(service)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = base.(tool.InvokableTool).InvokableRun(context.Background(), `{
 	        "file_path":"chapters/ch01.md",
-	        "edits":[
-          {"id":"valid","old_string":"opening","new_string":"new opening"},
-          {"id":"missing","old_string":"not present","new_string":"replacement"}
+	        "file_revision":"`+workspacechange.Revision([]byte(original))+`",
+	        "replacements":[
+          {"start_line":1,"content":"new opening"},
+          {"start_line":100,"content":"replacement"}
         ]
       }`)
 	if err == nil {
-		t.Fatal("batch with a missing anchor should fail")
+		t.Fatal("batch with an invalid line range should fail")
 	}
 	content, readErr := os.ReadFile(path)
 	if readErr != nil {
@@ -407,19 +477,17 @@ func TestDurabilityPendingToolErrorIsRetryableAndReportsVisibleMutation(t *testi
 	}
 }
 
-func TestWorkspaceFileToolsPassEmptyRevisionThroughWithoutPreread(t *testing.T) {
+func TestWorkspaceReplaceLinesRejectsEmptyRevisionBeforeWorkspaceAccess(t *testing.T) {
 	service := &recordingWorkspaceChangeService{workspace: t.TempDir(), readRevision: "sha256:current"}
-	edit, err := newWorkspaceEditFileTool(service)
+	replaceLines, err := newWorkspaceReplaceLinesTool(service)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := edit.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"ideas.md","edits":[{"old_string":"a","new_string":"b"}]}`); err != nil {
-		t.Fatal(err)
+	if _, err := replaceLines.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"ideas.md","replacements":[{"start_line":1,"content":"b"}]}`); err == nil {
+		t.Fatal("replace_lines without a revision should fail")
 	}
-	// Exact-only edits let the service resolve the base under its mutation
-	// lock, so the tool performs no pre-read at all.
-	if service.applyCalls != 1 || service.applyRequest.BaseRevision != "" || service.readCalls != 0 {
-		t.Fatalf("edit_file should pass an empty revision without pre-reading: %#v", service.applyRequest)
+	if service.applyCalls != 0 || service.readCalls != 0 {
+		t.Fatalf("missing revision should fail before workspace access: %#v", service.applyRequest)
 	}
 
 	write, err := newWorkspaceWriteFileTool(service)
@@ -482,7 +550,7 @@ func TestWorkspaceChangeConflictErrorNamesBothRevisions(t *testing.T) {
 
 func TestWorkspaceChangeReceiptReturnsNewRevisionAndHidesBaseRevision(t *testing.T) {
 	raw := `{"schema":"workspace_change.tool_result.v1","status":"applied","workspace":"/workspace/book-a","change_group_id":"group-1","change_set_id":"change-1","path":"chapters/ch01.md","base_revision":"sha256:before","revision":"sha256:after","review_status":"pending","apply_state":"applied"}`
-	filtered := FilterToolResultForModel("edit_file", `{"file_path":"chapters/ch01.md","edits":[]}`, raw)
+	filtered := FilterToolResultForModel("replace_lines", `{"file_path":"chapters/ch01.md","replacements":[]}`, raw)
 	if strings.Contains(filtered.Content, "change_set_id") || strings.Contains(filtered.Content, "apply_state") || strings.Contains(filtered.Content, `"status"`) {
 		t.Fatalf("model receipt retained workflow metadata: %s", filtered.Content)
 	}
@@ -501,12 +569,12 @@ func TestMutationTrackerAssociatesWorkspaceChangeReceipt(t *testing.T) {
 	tracker := newMutationTracker()
 	tracker.Observe(Event{Type: "tool_call", Data: map[string]any{
 		"id":   "call-1",
-		"name": "edit_file",
-		"args": `{"file_path":"chapters/ch01.md","edits":[]}`,
+		"name": "replace_lines",
+		"args": `{"file_path":"chapters/ch01.md","replacements":[]}`,
 	}})
 	tracker.Observe(Event{Type: "tool_result", Data: map[string]any{
 		"id":      "call-1",
-		"name":    "edit_file",
+		"name":    "replace_lines",
 		"content": `{"schema":"workspace_change.tool_result.v1","status":"applied","workspace":"/workspace/book-a","change_group_id":"group-1","change_set_id":"change-1","path":"chapters/ch01.md","base_revision":"sha256:before","revision":"sha256:after","review_status":"pending","apply_state":"applied"}`,
 	}})
 	mutations := tracker.Mutations()
@@ -526,7 +594,7 @@ func TestWorkspaceChangeReceiptIsTrustedOnlyForWorkspaceFileTools(t *testing.T) 
 			t.Fatalf("untrusted tool %q forged a workspace change receipt", toolName)
 		}
 	}
-	receipt, ok := parseWorkspaceChangeToolReceipt("edit_file", content)
+	receipt, ok := parseWorkspaceChangeToolReceipt("replace_lines", content)
 	if !ok || receipt.Workspace != "/workspace/book-a" || receipt.ChangeSetID != "change-1" {
 		t.Fatalf("trusted receipt was not parsed: %#v ok=%t", receipt, ok)
 	}

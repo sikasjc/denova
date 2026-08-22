@@ -182,11 +182,12 @@ func normalizeToolName(name string) string {
 
 func isToolWriteLike(name string) bool {
 	switch name {
-	case "write_file", "edit_file", "delete_file", "create_file", "move_file", "copy_file", "rename_file", "mkdir", "remove_file":
+	case "write_file", "replace_lines", "replace_text", "delete_file", "create_file", "move_file", "copy_file", "rename_file", "mkdir", "remove_file":
 		return true
 	}
 	return strings.HasPrefix(name, "write_") ||
 		strings.HasPrefix(name, "edit_") ||
+		strings.HasPrefix(name, "replace_") ||
 		strings.HasPrefix(name, "delete_") ||
 		strings.HasPrefix(name, "create_") ||
 		strings.HasPrefix(name, "move_") ||

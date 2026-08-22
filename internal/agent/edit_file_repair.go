@@ -8,11 +8,11 @@ import (
 
 const maxPendingEditFileArgumentsBytes = 512 << 10
 
-// prepareEditFileArguments handles only the recoverable shape error where an
-// edit_file request contains its patch but omits file_path. It intentionally
+// prepareEditFileArguments handles only the recoverable shape error where a
+// replace_lines request contains its patch but omits file_path. It intentionally
 // does not guess a path from workspace files: the model must provide it.
 func prepareEditFileArguments(toolName, arguments string, observer *RunObserver) (string, string) {
-	if normalizeToolName(toolName) != "edit_file" || observer == nil {
+	if normalizeToolName(toolName) != "replace_lines" || observer == nil {
 		return arguments, ""
 	}
 
@@ -25,10 +25,7 @@ func prepareEditFileArguments(toolName, arguments string, observer *RunObserver)
 		if len(arguments) > maxPendingEditFileArgumentsBytes {
 			return arguments, ""
 		}
-		// A missing optional file_revision must not be serialized as JSON null;
-		// retaining only the fields that were present keeps the repaired call
-		// equivalent to the original call.
-		cachedPayload := map[string]json.RawMessage{"edits": payload["edits"]}
+		cachedPayload := map[string]json.RawMessage{"replacements": payload["replacements"]}
 		if revision, exists := payload["file_revision"]; exists {
 			cachedPayload["file_revision"] = revision
 		}
@@ -67,7 +64,7 @@ func jsonString(value json.RawMessage) string {
 }
 
 func hasEditPayload(payload map[string]json.RawMessage) bool {
-	edits, ok := payload["edits"]
+	edits, ok := payload["replacements"]
 	if !ok {
 		return false
 	}
@@ -101,12 +98,12 @@ func mergePendingEditFileArguments(cached, path string, _ map[string]json.RawMes
 func missingEditFilePathMessage() string {
 	return `[tool error]
 type: recoverable_missing_argument
-tool: edit_file
+tool: replace_lines
 missing: file_path
 cached: true
 retryable: true
 workspace_mutated: false
 
-中文：本次 edit_file 的 edits 和 file_revision 已在当前运行中缓存。下一次只需调用 edit_file 并传入 file_path，不需要重新生成 edits 或 old_string/new_string。
+中文：本次 replace_lines 的 replacements 和 file_revision 已在当前运行中缓存。下一次只需调用 replace_lines 并传入 file_path，不需要重新生成 replacements。
 请下一次只传入 file_path，Denova 会自动合并已缓存的编辑参数。`
 }

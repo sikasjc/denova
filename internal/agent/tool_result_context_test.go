@@ -332,15 +332,15 @@ func TestApplyToolResultContextPolicyDropsTransientSearchAndTodoTools(t *testing
 	}
 }
 
-func TestApplyToolResultContextPolicyProjectsHistoricalEditArguments(t *testing.T) {
-	arguments := `{"file_path":"/workspace/chapters/ch00001.md","edits":[` +
-		`{"old_string":"` + strings.Repeat("旧正文", 1000) + `","new_string":"` + strings.Repeat("新正文", 1000) + `"},` +
-		`{"old_string":"旧句","new_string":"新句"}]}`
+func TestApplyToolResultContextPolicyProjectsHistoricalReplaceLinesArguments(t *testing.T) {
+	arguments := `{"file_path":"/workspace/chapters/ch00001.md","file_revision":"sha256:before","replacements":[` +
+		`{"start_line":12,"content":"` + strings.Repeat("新正文", 1000) + `"},` +
+		`{"start_line":30,"content":"新句"}]}`
 	messages := []*schema.Message{
 		schema.AssistantMessage("", []schema.ToolCall{{
-			ID: "call-edit", Type: "function", Function: schema.FunctionCall{Name: "edit_file", Arguments: arguments},
+			ID: "call-edit", Type: "function", Function: schema.FunctionCall{Name: "replace_lines", Arguments: arguments},
 		}}),
-		schema.ToolMessage(`{"schema":"workspace_change.tool_result.v1","status":"applied","workspace":"/workspace","change_group_id":"group-1","change_set_id":"change-1","path":"chapters/ch00001.md","review_status":"pending","apply_state":"applied"}`, "call-edit", schema.WithToolName("edit_file")),
+		schema.ToolMessage(`{"schema":"workspace_change.tool_result.v1","status":"applied","workspace":"/workspace","change_group_id":"group-1","change_set_id":"change-1","path":"chapters/ch00001.md","review_status":"pending","apply_state":"applied"}`, "call-edit", schema.WithToolName("replace_lines")),
 		schema.UserMessage("继续"),
 	}
 	filtered := applyToolResultContextPolicy(messages, ToolResultContextPolicy{AgentKind: config.AgentKindIDE, Enabled: true})
@@ -350,7 +350,7 @@ func TestApplyToolResultContextPolicyProjectsHistoricalEditArguments(t *testing.
 	projected := filtered[0].ToolCalls[0].Function.Arguments
 	for _, want := range []string{
 		retainedToolCallSchema,
-		`"tool_name":"edit_file"`,
+		`"tool_name":"replace_lines"`,
 		`"path":"/workspace/chapters/ch00001.md"`,
 		`"operation_count":2`,
 		`"content_omitted":true`,
@@ -359,7 +359,7 @@ func TestApplyToolResultContextPolicyProjectsHistoricalEditArguments(t *testing.
 			t.Fatalf("projected edit arguments missing %q: %s", want, projected)
 		}
 	}
-	if strings.Contains(projected, "旧正文") || strings.Contains(projected, "新正文") {
+	if strings.Contains(projected, "新正文") {
 		t.Fatalf("historical patch bodies must not remain in next-turn arguments: %s", projected)
 	}
 }

@@ -246,6 +246,15 @@ func TestSessionConversationKeepsRawRequestAtAbsoluteTailAfterWorkspaceContext(t
 	if strings.Count(final, "# 本轮用户请求（最高优先级）") != 1 {
 		t.Fatalf("authoritative request heading should appear exactly once:\n%s", final)
 	}
+	ledger := conversation.ContextLedgerPartsForMessages(messages)
+	if len(ledger) != 2 {
+		t.Fatalf("ledger parts = %#v, want stable and dynamic workspace sources", ledger)
+	}
+	for _, part := range ledger {
+		if !part.Included {
+			t.Fatalf("workspace context was not recorded as included: %#v", part)
+		}
+	}
 }
 
 func TestSessionConversationWorkspaceEditsPreserveHistoryPrefix(t *testing.T) {

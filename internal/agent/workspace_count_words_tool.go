@@ -21,18 +21,18 @@ const workspaceCountWordsResultSchema = "workspace_count_words.v1"
 var workspaceCountWordsToolDescription = strings.TrimSpace(`Count writing word statistics with the exact same rule as the Denova UI: one non-whitespace character counts as one word (CJK text counts per character).
 - Call without paths to get whole-book statistics: every chapter's words in reading order, the chapter total, and word counts of outline/detailed-outline documents.
 - Call with paths to count specific workspace files (absolute or workspace-relative); each missing file is reported in its own entry instead of failing the whole call.
-- start_line/end_line (1-based, inclusive, edit_file line numbers) optionally restrict counting to one line range applied to every given path; omit both to count whole files. Use them to measure a section inside a chapter instead of re-counting by hand.
+- start_line/end_line (1-based, inclusive, replace_lines line numbers) optionally restrict counting to one line range applied to every given path; omit both to count whole files. Use them to measure a section inside a chapter instead of re-counting by hand.
 - When reporting or reviewing chapter lengths, quote these numbers verbatim; never estimate word counts by reading the text.
 
 使用与 Denova 界面完全一致的字数口径统计写作字数：一个非空白字符记 1 字（中文按字数统计）。
 - 不传 paths 时返回全书统计：按阅读顺序排列的每章字数、章节总字数，以及大纲/细纲等文档的字数。
 - 传入 paths 时统计指定的 workspace 文件（绝对路径或相对路径均可）；缺失文件在对应条目内报告错误，不会导致整个调用失败。
-- start_line/end_line（1-based、含端点、与 edit_file 行号一致）可选地把统计限定在同一线性范围内，作用于每个传入路径；两者都省略时统计整个文件。需要统计章节内某一段时使用，避免手动估算。
+- start_line/end_line（1-based、含端点、与 replace_lines 行号一致）可选地把统计限定在同一线性范围内，作用于每个传入路径；两者都省略时统计整个文件。需要统计章节内某一段时使用，避免手动估算。
 - 汇报或审阅章节字数时必须直接引用这些数字，禁止通过阅读正文自行估算字数。`)
 
 type workspaceCountWordsInput struct {
 	Paths     []string `json:"paths,omitempty" jsonschema:"description=Optional specific workspace file paths (absolute or workspace-relative); omit to return whole-book chapter statistics"`
-	StartLine int      `json:"start_line,omitempty" jsonschema:"description=Optional 1-based first line (inclusive, edit_file numbering) applied to every path; requires paths and must be used with end_line semantics"`
+	StartLine int      `json:"start_line,omitempty" jsonschema:"description=Optional 1-based first line (inclusive, replace_lines numbering) applied to every path; requires paths and must be used with end_line semantics"`
 	EndLine   int      `json:"end_line,omitempty" jsonschema:"description=Optional inclusive 1-based last line applied to every path; 0 means through end of file"`
 }
 

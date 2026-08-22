@@ -37,7 +37,7 @@ func TestCrossTurnAssemblyRefreshesEditedFileBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	editTool, err := newWorkspaceEditFileTool(service)
+	editTool, err := newWorkspaceReplaceLinesTool(service)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestCrossTurnAssemblyRefreshesEditedFileBody(t *testing.T) {
 	}
 
 	// The model edits line 2, changing the file the read anchored to.
-	if _, err := editTool.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"`+path+`","file_revision":"`+readMetadata.Revision+`","edits":[{"start_line":2,"new_string":"改写后的第二行\n新增的一行"}]}`); err != nil {
+	if _, err := editTool.(tool.InvokableTool).InvokableRun(context.Background(), `{"file_path":"`+path+`","file_revision":"`+readMetadata.Revision+`","replacements":[{"start_line":2,"content":"改写后的第二行\n新增的一行"}]}`); err != nil {
 		t.Fatal(err)
 	}
 

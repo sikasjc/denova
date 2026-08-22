@@ -83,7 +83,7 @@ function useDirectorProcessMessages({
         ? [{
             id: 'director-run-tool',
             role: 'tool_call',
-            name: 'edit_file',
+            name: 'replace_lines',
             status: toolStatus,
             args: JSON.stringify({ file_path: 'director.md' }),
             result: toolStatus === 'success' ? progress : '',

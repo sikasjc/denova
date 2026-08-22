@@ -694,8 +694,8 @@ func jsonStringValueOffset(data, key string) (int, bool) {
 
 func directorToolGeneratedTextKeys(name string) []string {
 	switch strings.TrimSpace(name) {
-	case "edit_file":
-		return []string{"new_string", "content"}
+	case "replace_lines":
+		return []string{"content"}
 	case submitDirectorPlanUpdateToolName:
 		return []string{"plan", "agent_brief", "lore_context"}
 	default:
@@ -741,7 +741,7 @@ func markDirectorPlanInputHidden(event *session.DisplayEvent, generatedChars int
 
 func directorPlanWriteTool(name string) bool {
 	switch strings.TrimSpace(name) {
-	case "write_file", "edit_file", submitDirectorPlanUpdateToolName:
+	case "write_file", "replace_lines", "replace_text", submitDirectorPlanUpdateToolName:
 		return true
 	default:
 		return false

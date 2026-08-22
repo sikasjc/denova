@@ -361,12 +361,12 @@ describe('MessageItem', () => {
     expect(screen.getByText('写入完成')).toBeInTheDocument()
   })
 
-  it('批量 edit_file 显示改动数量且不流式展开 new_string', () => {
+  it('批量 replace_lines 显示改动数量且不流式展开 content', () => {
     const args = JSON.stringify({
       file_path: 'chapters/ch01.md',
-      edits: [
-        { id: 'intro', old_string: '旧开场', new_string: '新的开场正文' },
-        { id: 'ending', old_string: '旧结尾', new_string: '新的结尾正文' },
+      replacements: [
+        { start_line: 12, content: '新的开场正文' },
+        { start_line: 48, content: '新的结尾正文' },
       ],
     })
     const { container } = render(
@@ -374,8 +374,8 @@ describe('MessageItem', () => {
         message={{
           id: 'tool-batch-edit',
           role: 'tool_call',
-          content: 'edit_file',
-          name: 'edit_file',
+          content: 'replace_lines',
+          name: 'replace_lines',
           args,
           status: 'running',
         }}

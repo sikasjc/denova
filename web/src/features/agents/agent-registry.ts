@@ -58,7 +58,7 @@ const BASE_TOOL_VALUES: Required<AgentToolOverride> = {
   web_search: true,
   file_write: true,
   image_generation: false,
-  shell_execute: true,
+  shell_execute: false,
   skills: true,
   lore_read: true,
   lore_write: true,
@@ -68,8 +68,8 @@ const BASE_TOOL_VALUES: Required<AgentToolOverride> = {
 }
 
 export const FALLBACK_AGENT_TOOL_VALUES: Record<VisibleAgentKey, Required<AgentToolOverride>> = {
-  ide: { file_read: true, web_search: true, file_write: true, image_generation: true, shell_execute: true, skills: true, lore_read: true, lore_write: true, todo: true, agent_config_read: false, agent_config_write: false },
-  interactive_story: { file_read: true, web_search: false, file_write: true, image_generation: false, shell_execute: true, skills: true, lore_read: true, lore_write: false, todo: false, agent_config_read: false, agent_config_write: false },
+  ide: { file_read: true, web_search: true, file_write: true, image_generation: true, shell_execute: false, skills: true, lore_read: true, lore_write: true, todo: true, agent_config_read: false, agent_config_write: false },
+  interactive_story: { file_read: true, web_search: false, file_write: true, image_generation: false, shell_execute: false, skills: true, lore_read: true, lore_write: false, todo: false, agent_config_read: false, agent_config_write: false },
   interactive_director: { file_read: true, web_search: false, file_write: true, image_generation: false, shell_execute: false, skills: false, lore_read: false, lore_write: false, todo: false, agent_config_read: false, agent_config_write: false },
   image: { file_read: false, web_search: false, file_write: false, image_generation: true, shell_execute: false, skills: true, lore_read: false, lore_write: false, todo: false, agent_config_read: false, agent_config_write: false },
   config_manager: { file_read: true, web_search: true, file_write: true, image_generation: false, shell_execute: false, skills: true, lore_read: true, lore_write: true, todo: true, agent_config_read: true, agent_config_write: true },

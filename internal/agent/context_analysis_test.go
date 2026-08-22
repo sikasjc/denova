@@ -506,10 +506,13 @@ func TestIDEContextAnalysisSplitsStableAndDynamicWorkspaceState(t *testing.T) {
 	if final.Source != "本轮上下文" || final.Title != "作品上下文与本轮用户请求" {
 		t.Fatalf("final message should carry the assembled workspace context label: %#v", final)
 	}
-	for _, want := range []string{"# 稳定作品上下文", "主角进入废城", "## 角色小标题", "林川长期设定", "# 本轮动态作品状态", "章节组：探索废城", "chapters/ch0001-开局.md", "林川：警惕", "## IDE 当前状态", "当前聚焦文件：chapters/ch0001-开局.md", "当前打开文件：chapters/ch0001-开局.md、setting/test.md", "# 本轮用户请求（最高优先级）"} {
+	for _, want := range []string{"# 稳定作品上下文", "主角进入废城", "常驻资料目录", "id: hero", "名称: 林川", "# 本轮动态作品状态", "章节组：探索废城", "chapters/ch0001-开局.md", "林川：警惕", "## IDE 当前状态", "当前聚焦文件：chapters/ch0001-开局.md", "当前打开文件：chapters/ch0001-开局.md、setting/test.md", "# 本轮用户请求（最高优先级）"} {
 		if !strings.Contains(final.Content, want) {
 			t.Fatalf("final message missing %q:\n%s", want, final.Content)
 		}
+	}
+	if strings.Contains(final.Content, "林川长期设定") {
+		t.Fatalf("resident lore body should be retrieved on demand, not injected into every writing turn:\n%s", final.Content)
 	}
 	stableIndex := strings.Index(final.Content, "# 稳定作品上下文")
 	dynamicIndex := strings.Index(final.Content, "# 本轮动态作品状态")
